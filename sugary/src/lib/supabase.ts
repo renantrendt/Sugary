@@ -11,6 +11,7 @@ export interface User {
   name_tag: string
   created_at: string
   timezone: string
+  longest_streak: number
 }
 
 export interface SugarLog {
