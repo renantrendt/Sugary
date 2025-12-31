@@ -474,29 +474,35 @@ function HomePage() {
         )}
 
         {/* Ranking - horizontal scroll */}
-        <div className="flex w-full items-center justify-center gap-6 overflow-x-auto">
+        <div className="flex w-full items-center gap-6 overflow-x-auto px-4 pb-2 hide-scrollbar">
           {ranking.length === 0 ? (
-            <p className="text-caption font-caption text-subtext-color">
+            <p className="text-caption font-caption text-subtext-color w-full text-center">
               No one has logged sugar today yet
             </p>
           ) : (
-            ranking.map((user) => (
-              <div key={user.name_tag} className="flex flex-col items-center gap-1 flex-shrink-0">
-                <span className="text-heading-2 font-heading-2 text-brand-600">
-                  {user.sugar}g {user.streak > 0 && <span className="inline-flex items-baseline gap-1"><FaFire className="text-brand-600 relative top-[2px]" /> {user.streak}</span>}
-                </span>
-                <button
-                  onClick={() => openUserStats({ user_id: user.user_id, name_tag: user.name_tag, longest_streak: user.longest_streak })}
-                  className={`text-caption font-caption ${
-                    user.name_tag === currentUser?.name_tag
-                      ? "text-brand-600 font-bold"
-                      : "text-default-font"
-                  } hover:underline`}
-                >
-                  {user.name_tag}
-                </button>
-              </div>
-            ))
+            <>
+              {/* Spacer to center when few items */}
+              <div className="flex-1 min-w-0" />
+              {ranking.map((user) => (
+                <div key={user.name_tag} className="flex flex-col items-center gap-1 flex-shrink-0">
+                  <span className="text-heading-2 font-heading-2 text-brand-600">
+                    {user.sugar}g {user.streak > 0 && <span className="inline-flex items-baseline gap-1"><FaFire className="text-brand-600 relative top-[2px]" /> {user.streak}</span>}
+                  </span>
+                  <button
+                    onClick={() => openUserStats({ user_id: user.user_id, name_tag: user.name_tag, longest_streak: user.longest_streak })}
+                    className={`text-caption font-caption ${
+                      user.name_tag === currentUser?.name_tag
+                        ? "text-brand-600 font-bold"
+                        : "text-default-font"
+                    } hover:underline`}
+                  >
+                    {user.name_tag}
+                  </button>
+                </div>
+              ))}
+              {/* Spacer to center when few items */}
+              <div className="flex-1 min-w-0" />
+            </>
           )}
         </div>
       </div>
