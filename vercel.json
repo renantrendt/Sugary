@@ -1,0 +1,8 @@
+{
+  "buildCommand": "cd sugary && npm install && npm run build",
+  "outputDirectory": "sugary/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/" }
+  ]
+}
+
