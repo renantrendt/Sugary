@@ -1,0 +1,25 @@
+{
+  "name": "Sugary",
+  "short_name": "Sugary",
+  "description": "Track your sugar intake with friends",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFF7ED",
+  "theme_color": "#FFF7ED",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/sugar.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
+

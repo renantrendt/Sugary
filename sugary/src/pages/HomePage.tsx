@@ -4,6 +4,12 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase, User, SugarLog } from "../lib/supabase";
 import { FaFire } from "react-icons/fa6";
+import { 
+  isPushSupported, 
+  subscribeToPush, 
+  isSubscribed as checkIsSubscribed,
+  getNotificationPermission
+} from "../lib/pushNotifications";
 
 function HomePage() {
   const navigate = useNavigate();
@@ -24,6 +30,7 @@ function HomePage() {
   const [holdingSugar, setHoldingSugar] = useState(0);
   const [isWarming, setIsWarming] = useState(false); // 2 sec warmup phase
   const [warmupProgress, setWarmupProgress] = useState(0); // 0 to 100
+  const [canAskForNotifications, setCanAskForNotifications] = useState(true);
   
   const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const holdIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -34,6 +41,50 @@ function HomePage() {
   const getTodayDate = useCallback(() => {
     return new Date().toISOString().split("T")[0];
   }, []);
+
+  // Check if we can ask for notifications (haven't asked in the last week)
+  useEffect(() => {
+    const checkCanAsk = async () => {
+      // If already subscribed, no need to ask
+      if (isPushSupported()) {
+        const subscribed = await checkIsSubscribed();
+        if (subscribed) {
+          setCanAskForNotifications(false);
+          return;
+        }
+      }
+
+      const lastAsked = localStorage.getItem("lastNotificationAsk");
+      if (lastAsked) {
+        const weekInMs = 7 * 24 * 60 * 60 * 1000;
+        const timeSinceAsked = Date.now() - parseInt(lastAsked);
+        if (timeSinceAsked < weekInMs) {
+          setCanAskForNotifications(false);
+        }
+      }
+    };
+    checkCanAsk();
+  }, []);
+
+  // Request notifications (called after sugar log)
+  const requestNotifications = async () => {
+    const userId = localStorage.getItem("userId");
+    if (!userId || !isPushSupported() || !canAskForNotifications) return;
+
+    // Check if already subscribed
+    const alreadySubscribed = await checkIsSubscribed();
+    if (alreadySubscribed) {
+      setCanAskForNotifications(false);
+      return;
+    }
+
+    // Subscribe (this will trigger the permission prompt)
+    await subscribeToPush(userId);
+    
+    // Store when we asked, so we wait a week before asking again
+    localStorage.setItem("lastNotificationAsk", Date.now().toString());
+    setCanAskForNotifications(false);
+  };
 
   // Check auth on mount
   useEffect(() => {
@@ -321,6 +372,14 @@ function HomePage() {
     if (!error) {
       setTodaySugar(newTotal);
       await loadRanking();
+      
+      // Ask for notification permission (if we haven't asked in the last week)
+      if (canAskForNotifications) {
+        // Small delay so the user sees their sugar saved first
+        setTimeout(() => {
+          requestNotifications();
+        }, 500);
+      }
     }
   };
 
