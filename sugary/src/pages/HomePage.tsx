@@ -246,7 +246,7 @@ function HomePage() {
         <div className="flex items-center justify-center">
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="text-body-bold font-body-bold text-brand-600 px-3 py-2 rounded-lg transition-colors"
+            className="text-body-bold font-body-bold text-brand-600 bg-brand-100 px-3 py-2 rounded-lg transition-colors"
           >
             {todayFormatted}
           </button>        
@@ -318,7 +318,7 @@ function HomePage() {
       </div>
 
       {/* Main sugar button area */}
-      <div className="mt-[-40px] flex w-full grow shrink-0 basis-0 flex-col items-center justify-center gap-6 px-6 py-12 relative">
+      <div className="mt-[-80px] flex w-full grow shrink-0 basis-0 flex-col items-center justify-center gap-6 px-6 py-12 relative">
         {/* Total sugar display above the button */}
         <div className="flex flex-col items-center gap-2">
           <span className="text-heading-1 font-heading-1 text-brand-600">
