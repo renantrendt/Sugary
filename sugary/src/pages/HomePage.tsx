@@ -36,6 +36,32 @@ function HomePage() {
     loadUserData(userId);
   }, [navigate]);
 
+  // Real-time subscription for ranking updates
+  useEffect(() => {
+    const today = getTodayDate();
+    
+    const channel = supabase
+      .channel('sugar_logs_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'sugar_logs',
+          filter: `date=eq.${today}`
+        },
+        () => {
+          // Reload ranking when any sugar log changes today
+          loadRanking();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [getTodayDate]);
+
   const loadUserData = async (userId: string) => {
     // Get user
     const { data: user } = await supabase
@@ -217,9 +243,9 @@ function HomePage() {
   });
 
   return (
-    <div className="flex w-full flex-col items-start bg-brand-50 h-screen">
+    <div className="flex w-full flex-col items-start bg-brand-50 h-screen overflow-hidden">
       {/* Top bar with date and ranking */}
-      <div className="flex w-full flex-col items-center justify-center gap-4 px-6 pt-8 pb-6">
+      <div className="flex w-full flex-col items-center justify-center gap-2 px-4 pt-4 pb-2 mobile:gap-2 mobile:pt-3 mobile:pb-2">
         {/* Date button top left */}
         <div className="flex w-full items-center justify-between">
           <button
@@ -299,7 +325,7 @@ function HomePage() {
       </div>
 
       {/* Main sugar button area */}
-      <div className="flex w-full grow shrink-0 basis-0 flex-col items-center justify-center gap-6 px-6 py-12 relative">
+      <div className="flex w-full grow shrink-0 basis-0 flex-col items-center justify-center gap-3 px-4 py-4 relative mobile:gap-2 mobile:py-2">
         {/* Total sugar display above the button */}
         <div className="flex flex-col items-center gap-2">
           <span className="text-heading-1 font-heading-1 text-brand-600">
@@ -314,7 +340,7 @@ function HomePage() {
         <div className="relative">
           {/* SVG Progress Ring */}
           <svg
-            className="absolute -inset-4 w-56 h-56 -rotate-90"
+            className="absolute -inset-3 w-44 h-44 mobile:w-40 mobile:h-40 -rotate-90"
             viewBox="0 0 100 100"
           >
             {/* Background ring */}
@@ -364,14 +390,20 @@ function HomePage() {
             onMouseLeave={handleHoldEnd}
             onTouchStart={handleHoldStart}
             onTouchEnd={handleHoldEnd}
-            className={`relative transition-transform ${
+            onContextMenu={(e) => e.preventDefault()}
+            className={`relative transition-transform select-none ${
               isHolding ? "scale-105" : "hover:scale-105"
             }`}
+            style={{ 
+              WebkitTouchCallout: 'none',
+              WebkitUserSelect: 'none',
+              touchAction: 'manipulation'
+            }}
           >
             <img
               src="/sugar.png"
               alt="Add sugar"
-              className="w-48 h-48 object-contain select-none pointer-events-none"
+              className="w-36 h-36 mobile:w-32 mobile:h-32 object-contain select-none pointer-events-none"
               draggable={false}
             />
             {isHolding && (
