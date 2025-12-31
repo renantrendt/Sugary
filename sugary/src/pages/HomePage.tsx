@@ -241,18 +241,15 @@ function HomePage() {
   return (
     <div className="flex w-full flex-col items-start bg-brand-50 h-screen">
       {/* Top bar with date and ranking */}
-      <div className="flex w-full flex-col items-center justify-center gap-4 px-6 pt-8 pb-6">
-        {/* Date button top left */}
-        <div className="flex w-full items-center justify-between">
+      <div className="flex w-full flex-col items-center justify-center gap-4 px-6 pt-8">
+        {/* Date button centered */}
+        <div className="flex items-center justify-center">
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="text-body-bold font-body-bold text-brand-600 bg-brand-100 px-3 py-2 rounded-lg hover:bg-brand-200 transition-colors"
+            className="text-body-bold font-body-bold text-brand-600 px-3 py-2 rounded-lg transition-colors"
           >
-            📅 {todayFormatted}
-          </button>
-          <span className="text-caption font-caption text-subtext-color">
-            Limit to die: 5g/day
-          </span>
+            {todayFormatted}
+          </button>        
         </div>
 
         {/* History popup */}
@@ -294,7 +291,7 @@ function HomePage() {
         )}
 
         {/* Ranking - horizontal scroll */}
-        <div className="flex w-full items-center gap-6 pb-2 overflow-x-auto">
+        <div className="flex w-full items-center justify-center gap-6 overflow-x-auto">
           {ranking.length === 0 ? (
             <p className="text-caption font-caption text-subtext-color">
               No one has logged sugar today yet
@@ -321,7 +318,7 @@ function HomePage() {
       </div>
 
       {/* Main sugar button area */}
-      <div className="flex w-full grow shrink-0 basis-0 flex-col items-center justify-center gap-6 px-6 py-12 relative">
+      <div className="mt-[-40px] flex w-full grow shrink-0 basis-0 flex-col items-center justify-center gap-6 px-6 py-12 relative">
         {/* Total sugar display above the button */}
         <div className="flex flex-col items-center gap-2">
           <span className="text-heading-1 font-heading-1 text-brand-600">
@@ -409,9 +406,12 @@ function HomePage() {
         </div>
 
         {/* Instructions */}
-        <span className="text-caption font-caption text-subtext-color text-center">
+        <span className="text-caption font-caption text-subtext-color text-center italic">
           Hold for 2 seconds to start adding sugar
         </span>
+        <span className="text-caption font-caption text-subtext-color">
+            Limit to die: 35g/week
+          </span>
       </div>
     </div>
   );
