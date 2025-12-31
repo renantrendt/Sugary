@@ -241,7 +241,7 @@ function HomePage() {
   return (
     <div className="flex w-full flex-col items-start bg-brand-50 h-screen">
       {/* Top bar with date and ranking */}
-      <div className="flex w-full flex-col items-center justify-center gap-4 px-6 pt-8">
+      <div className="mt-6 flex w-full flex-col items-center justify-center gap-4 px-6 pt-8">
         {/* Date button centered */}
         <div className="flex items-center justify-center">
           <button
