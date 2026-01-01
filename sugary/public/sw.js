@@ -46,7 +46,8 @@ self.addEventListener('activate', (event) => {
 
 // Push event - handle incoming push notifications
 self.addEventListener('push', (event) => {
-  console.log('[SW] Push received');
+  console.log('[SW] Push received', event);
+  console.log('[SW] Has data:', !!event.data);
   
   const randomNotif = getRandomNotification();
   
@@ -60,14 +61,25 @@ self.addEventListener('push', (event) => {
 
   if (event.data) {
     try {
-      data = { ...data, ...event.data.json() };
+      console.log('[SW] Attempting to parse JSON');
+      const parsed = event.data.json();
+      console.log('[SW] Parsed data:', parsed);
+      data = { ...data, ...parsed };
     } catch (e) {
-      const text = event.data.text();
-      if (text && text.length > 0) {
-        data.body = text;
+      console.log('[SW] JSON parse failed, trying text:', e);
+      try {
+        const text = event.data.text();
+        console.log('[SW] Text data:', text);
+        if (text && text.length > 0) {
+          data.body = text;
+        }
+      } catch (e2) {
+        console.error('[SW] Failed to parse push data:', e2);
       }
     }
   }
+
+  console.log('[SW] Final notification data:', data);
 
   const options = {
     body: data.body,
@@ -76,11 +88,20 @@ self.addEventListener('push', (event) => {
     data: data.data || { url: '/' },
     actions: [
       { action: 'open', title: 'Open Sugary' }
-    ]
+    ],
+    requireInteraction: true, // Keep notification visible
+    vibrate: [200, 100, 200], // Vibration pattern
+    tag: 'sugary-notification' // Replace previous notifications
   };
 
+  console.log('[SW] Showing notification with options:', options);
+
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(data.title, options).then(() => {
+      console.log('[SW] Notification shown successfully');
+    }).catch(err => {
+      console.error('[SW] Failed to show notification:', err);
+    })
   );
 });
 
