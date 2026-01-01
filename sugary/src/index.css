@@ -6,12 +6,14 @@ html {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-y: hidden;
 }
 
 body {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
+  overflow-y: hidden;
 }
 
 #root {
