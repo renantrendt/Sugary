@@ -8,8 +8,7 @@ import {
   isPushSupported, 
   subscribeToPush, 
   isSubscribed as checkIsSubscribed,
-  getNotificationPermission,
-  sendTestNotification
+  getNotificationPermission
 } from "../lib/pushNotifications";
 
 function HomePage() {
@@ -666,16 +665,6 @@ function HomePage() {
             Limit to die: 35g/week
           </span>
         
-        {/* Temporary test button */}
-        <button
-          onClick={async () => {
-            const sent = await sendTestNotification();
-            alert(sent ? 'Notification sent!' : 'Failed to send');
-          }}
-          className="mt-4 text-xs text-brand-600 bg-brand-100 px-3 py-2 rounded-lg"
-        >
-          🔔 Test Notification
-        </button>
       </div>
     </div>
   );
