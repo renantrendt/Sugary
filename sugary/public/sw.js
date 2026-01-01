@@ -104,7 +104,7 @@ self.addEventListener('push', (event) => {
   console.log('[SW] Push received', event);
   console.log('[SW] Has data:', !!event.data);
   
-  let notificationType = 'random';
+  let notificationType = 'auto'; // Default to auto-detect based on UTC time (for iOS empty payloads)
   let useCustomMessage = false;
   let data = {
     icon: '/favicon.png',
