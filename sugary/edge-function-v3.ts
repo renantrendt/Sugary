@@ -3,30 +3,37 @@
 //
 // USAGE:
 // ──────────────────────────────────────────────────────────────────────
-// RANDOM message (for cron jobs - SW picks from its array):
+// RANDOM message (all categories):
 //   curl -s -X POST "https://ioyixenqdshxqgqoocwj.supabase.co/functions/v1/send-weekly-ranking" \
 //     -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlveWl4ZW5xZHNoeHFncW9vY3dqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzIwNDcyNywiZXhwIjoyMDgyNzgwNzI3fQ.XqJSKaxAzaY5zAfSL5LH9C4mLgqYgUHtx2z5DyXQ97A" \
 //     -H "Content-Type: application/json" \
 //     -d '{}'
 //
-// Custom message to ALL users:
+// TYPED random message (update | daily | weekly | educational):
+//   curl -s -X POST "https://ioyixenqdshxqgqoocwj.supabase.co/functions/v1/send-weekly-ranking" \
+//     -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlveWl4ZW5xZHNoeHFncW9vY3dqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzIwNDcyNywiZXhwIjoyMDgyNzgwNzI3fQ.XqJSKaxAzaY5zAfSL5LH9C4mLgqYgUHtx2z5DyXQ97A" \
+//     -H "Content-Type: application/json" \
+//     -d '{"type": "update"}'
+//
+// Custom message to ALL users (NOT supported on iOS Safari):
 //   curl -s -X POST "https://ioyixenqdshxqgqoocwj.supabase.co/functions/v1/send-weekly-ranking" \
 //     -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlveWl4ZW5xZHNoeHFncW9vY3dqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzIwNDcyNywiZXhwIjoyMDgyNzgwNzI3fQ.XqJSKaxAzaY5zAfSL5LH9C4mLgqYgUHtx2z5DyXQ97A" \
 //     -H "Content-Type: application/json" \
 //     -d '{"title": "🏆 Title", "body": "Message body"}'
 //
-// Custom message to SPECIFIC users (by name_tag):
+// Custom message to SPECIFIC users:
 //   curl -s -X POST "https://ioyixenqdshxqgqoocwj.supabase.co/functions/v1/send-weekly-ranking" \
 //     -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlveWl4ZW5xZHNoeHFncW9vY3dqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzIwNDcyNywiZXhwIjoyMDgyNzgwNzI3fQ.XqJSKaxAzaY5zAfSL5LH9C4mLgqYgUHtx2z5DyXQ97A" \
 //     -H "Content-Type: application/json" \
-//     -d '{"title": "👋 Hey!", "body": "Just for you", "users": ["renan", "friend1"]}'
+//     -d '{"title": "👋 Hey!", "body": "Just for you", "users": ["renan"]}'
 //
 // With custom urgency (very-low | low | normal | high):
 //   curl -s -X POST "https://ioyixenqdshxqgqoocwj.supabase.co/functions/v1/send-weekly-ranking" \
 //     -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlveWl4ZW5xZHNoeHFncW9vY3dqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzIwNDcyNywiZXhwIjoyMDgyNzgwNzI3fQ.XqJSKaxAzaY5zAfSL5LH9C4mLgqYgUHtx2z5DyXQ97A" \
 //     -H "Content-Type: application/json" \
-//     -d '{"title": "Info", "body": "Non-urgent update", "urgency": "low"}'
+//     -d '{"type": "weekly", "urgency": "low"}'
 //
+// NOTE: iOS Safari cannot decrypt custom messages. Use "type" parameter instead.
 // Default urgency: "high" for custom messages, "normal" for random messages
 // ──────────────────────────────────────────────────────────────────────
  
@@ -241,6 +248,7 @@ serve(async (req) => {
     let body: string | undefined;
     let targetUsers: string[] | undefined; // name_tags
     let urgency: "very-low" | "low" | "normal" | "high" | undefined;
+    let type: "random" | "update" | "daily" | "weekly" | "educational" | undefined;
 
     try {
       const reqBody = await req.json();
@@ -248,6 +256,7 @@ serve(async (req) => {
       body = reqBody.body;
       targetUsers = reqBody.users; // name_tags like ["renan", "friend1"]
       urgency = reqBody.urgency; // optional: "very-low" | "low" | "normal" | "high"
+      type = reqBody.type; // optional: "random" | "update" | "daily" | "weekly" | "educational"
     } catch {
       // Empty body is OK - will use random (SW fallback)
     }
@@ -346,27 +355,47 @@ serve(async (req) => {
  
           let fetchBody: Uint8Array | null = null;
 
-          // Detect iOS Safari (web.push.apple.com) - it has issues with encrypted payloads
+          // Detect iOS Safari (web.push.apple.com) - it has broken encrypted payload support
           const isIOSSafari = sub.endpoint.includes("web.push.apple.com");
 
-          // If custom message, encrypt payload
+          // Determine what to send
           if (hasCustomMessage) {
-            if (!sub.p256dh || !sub.auth) {
-              throw new Error(`Missing encryption keys (p256dh/auth) for user ${sub.name_tag || sub.user_id}. Cannot send custom message.`);
+            // Custom message with title & body
+            if (isIOSSafari) {
+              throw new Error(`iOS Safari does not support encrypted custom messages. User: ${sub.name_tag || sub.user_id}. Use 'type' parameter for random messages only.`);
             }
-            const payload = JSON.stringify({ title, body });
-            // Pass isIOSSafari flag to use adjusted record size for iOS
-            const encrypted = await encryptPayload(payload, sub.p256dh, sub.auth, isIOSSafari);
+            
+            if (!sub.p256dh || !sub.auth) {
+              throw new Error(`Missing encryption keys (p256dh/auth) for user ${sub.name_tag || sub.user_id}.`);
+            }
+            
+            const payload = JSON.stringify({ title, body, type: type || 'random' });
+            const encrypted = await encryptPayload(payload, sub.p256dh, sub.auth, false);
             fetchBody = encrypted;
             fetchHeaders["Content-Type"] = "application/octet-stream";
             fetchHeaders["Content-Encoding"] = "aes128gcm";
             fetchHeaders["Content-Length"] = encrypted.length.toString();
-            if (isIOSSafari) {
-              console.log(`[iOS] Sending encrypted payload with iOS-specific settings to ${sub.name_tag || sub.user_id}`);
+            
+          } else if (type && !isIOSSafari) {
+            // Type-specific random message for non-iOS (encrypt just the type)
+            if (!sub.p256dh || !sub.auth) {
+              throw new Error(`Missing encryption keys for user ${sub.name_tag || sub.user_id}.`);
             }
+            
+            const payload = JSON.stringify({ type });
+            const encrypted = await encryptPayload(payload, sub.p256dh, sub.auth, false);
+            fetchBody = encrypted;
+            fetchHeaders["Content-Type"] = "application/octet-stream";
+            fetchHeaders["Content-Encoding"] = "aes128gcm";
+            fetchHeaders["Content-Length"] = encrypted.length.toString();
+            console.log(`Sending ${type} notification type to ${sub.name_tag || sub.user_id}`);
+            
           } else {
-            // Random message - empty payload for all platforms
+            // Truly random message - empty payload (works on iOS)
             fetchHeaders["Content-Length"] = "0";
+            if (type && isIOSSafari) {
+              console.warn(`[iOS] Cannot send typed notification to ${sub.name_tag || sub.user_id}. Sending random instead.`);
+            }
           }
  
           const res = await fetch(sub.endpoint, {
@@ -376,7 +405,12 @@ serve(async (req) => {
           });
  
           if (res.status === 201 || res.status === 200) {
-            return { user: sub.name_tag || sub.user_id, status: "sent" };
+            return { 
+              user: sub.name_tag || sub.user_id, 
+              status: "sent",
+              platform: isIOSSafari ? "iOS Safari" : "Other",
+              messageType: hasCustomMessage ? "custom" : "random"
+            };
           }
  
           // Subscription expired - clean up
