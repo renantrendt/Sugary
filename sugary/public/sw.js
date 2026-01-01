@@ -49,7 +49,7 @@ self.addEventListener('push', (event) => {
   console.log('[SW] Push received');
   
   let data = {
-    title: '🍬 Sugary',
+    title: ' ',
     body: getRandomMessage(),
     icon: '/favicon.png',
     badge: '/favicon.png',
