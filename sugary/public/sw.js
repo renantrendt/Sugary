@@ -2,10 +2,9 @@
 const CACHE_NAME = 'sugary-v1';
 
 // AUTO-DETECTION SCHEDULE (Uses UTC - works globally):
-// 3:00-3:15 AM UTC    → update notifications (7pm PT previous day)
 // Mon 1:00 AM UTC     → weekly ranking (Sun 5pm PT)
 // 1:00-1:15 AM UTC    → daily reminders (5pm PT previous day, Mon-Sat)
-// Other times         → daily/educational mix
+// ALL OTHER TIMES     → update notifications (anytime outside daily/weekly windows)
 // NOTE: All users worldwide get correct message TYPE, but at different local times
 
 // Notification messages organized by type
@@ -59,25 +58,22 @@ function getRandomNotification(type = 'random') {
   // If type is 'auto', determine based on UTC time (works globally)
   if (type === 'auto') {
     const now = new Date();
-    const day = now.getUTCDay(); // 0 = Sunday
+    const day = now.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
     const hour = now.getUTCHours();
     const minute = now.getUTCMinutes();
     
-    // 3:00-3:15 AM UTC = update notifications (corresponds to 7pm PT previous day)
-    if (hour === 3 && minute < 15) {
-      type = 'update';
-    }
     // Monday 1:00 AM UTC = weekly ranking (Sunday 5pm PT)
-    else if (day === 1 && hour === 1) {
+    if (day === 1 && hour === 1) {
       type = 'weekly';
     }
-    // 1:00-1:15 AM UTC Mon-Sat = daily reminder (5pm PT previous day)
-    else if (hour === 1 && minute < 15 && day !== 1 && day !== 0) {
+    // 1:00-1:15 AM UTC Tue-Sat = daily reminder (5pm PT previous day)
+    // Note: day 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+    else if (hour === 1 && minute < 15 && day >= 2 && day <= 6) {
       type = 'daily';
     }
-    // Otherwise random from daily/educational
+    // ALL OTHER TIMES = update notifications (anytime outside daily/weekly windows)
     else {
-      type = Math.random() < 0.7 ? 'daily' : 'educational';
+      type = 'update';
     }
     
     console.log(`[SW] Auto-detected type: ${type} (UTC day: ${day}, hour: ${hour}:${minute})`);

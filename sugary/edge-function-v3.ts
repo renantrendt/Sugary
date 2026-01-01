@@ -35,10 +35,9 @@
 //
 // NOTE: iOS Safari cannot decrypt custom messages or types.
 // iOS WORKAROUND: Send empty payload '{}' - Service Worker auto-detects type from UTC time:
-//   - 3:00-3:15 AM UTC    → update notifications
-//   - Monday 1 AM UTC     → weekly ranking  
-//   - 1:00-1:15 AM UTC    → daily reminders (Mon-Sat)
-//   - Other times         → daily/educational mix
+//   - Monday 1 AM UTC         → weekly ranking (Sun 5pm PT)
+//   - 1:00-1:15 AM UTC Tue-Sat → daily reminders (5pm PT previous day)
+//   - ALL OTHER TIMES          → update notifications (use anytime for updates!)
 // Works globally - all users get correct TYPE regardless of timezone
 // 
 // Default urgency: "high" for custom messages, "normal" for random messages
