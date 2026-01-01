@@ -395,10 +395,10 @@ serve(async (req) => {
     );
  
     // Count results with detailed breakdown
-    const sentResults = results.filter(r => r.status === "fulfilled" && (r.value as any).status === "sent");
-    const expiredResults = results.filter(r => r.status === "fulfilled" && (r.value as any).status === "expired");
-    const failedResults = results.filter(r => r.status === "fulfilled" && (r.value as any).status === "failed");
-    const errorResults = results.filter(r => r.status === "fulfilled" && (r.value as any).status === "error");
+    const sentResults = results.filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled" && r.value.status === "sent");
+    const expiredResults = results.filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled" && r.value.status === "expired");
+    const failedResults = results.filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled" && r.value.status === "failed");
+    const errorResults = results.filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled" && r.value.status === "error");
 
     return new Response(
       JSON.stringify({
@@ -414,9 +414,9 @@ serve(async (req) => {
           expired: expiredResults.length,
           failed: failedResults.length,
           errors: errorResults.length,
-          expiredUsers: expiredResults.map(r => (r.value as any).user),
-          failedUsers: failedResults.map(r => (r.value as any).user),
-          errorUsers: errorResults.map(r => (r.value as any).user),
+          expiredUsers: expiredResults.map(r => r.value.user),
+          failedUsers: failedResults.map(r => r.value.user),
+          errorUsers: errorResults.map(r => r.value.user),
         },
         results,
       }),

@@ -42,6 +42,22 @@ function HomePage() {
     return new Date().toISOString().split("T")[0];
   }, []);
 
+  // Listen for push notifications when app is open (from service worker)
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'PUSH_NOTIFICATION') {
+          const notif = event.data.notification;
+          console.log('[App] Received push notification while app is open:', notif);
+          
+          // Show in-app toast/alert instead of browser notification
+          // For now, just log it - you can add a toast component later
+          alert(`${notif.title}\n${notif.body}`);
+        }
+      });
+    }
+  }, []);
+
   // Check if we can ask for notifications (haven't asked in the last week)
   useEffect(() => {
     const checkCanAsk = async () => {

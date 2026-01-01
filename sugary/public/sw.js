@@ -96,13 +96,41 @@ self.addEventListener('push', (event) => {
 
   console.log('[SW] Showing notification with options:', options);
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, options).then(() => {
-      console.log('[SW] Notification shown successfully');
-    }).catch(err => {
-      console.error('[SW] Failed to show notification:', err);
-    })
-  );
+  // Check if any app windows are currently focused (app is open)
+  const showNotificationPromise = clients.matchAll({ 
+    type: 'window', 
+    includeUncontrolled: true 
+  }).then(clientList => {
+    const appIsOpen = clientList.some(client => client.focused);
+    console.log('[SW] App is open:', appIsOpen);
+    console.log('[SW] Total windows:', clientList.length);
+
+    if (appIsOpen) {
+      // App is in foreground - send message to app instead of showing notification
+      console.log('[SW] App in foreground, sending message to client');
+      clientList.forEach(client => {
+        if (client.focused) {
+          client.postMessage({
+            type: 'PUSH_NOTIFICATION',
+            notification: data
+          });
+        }
+      });
+      // Don't show notification (iOS will show it anyway, but we tried)
+      // Note: iOS Safari WILL show it regardless - this is an iOS bug
+      return Promise.resolve();
+    } else {
+      // App is closed or background - show notification normally
+      console.log('[SW] App in background/closed, showing notification');
+      return self.registration.showNotification(data.title, options);
+    }
+  }).then(() => {
+    console.log('[SW] Notification handling completed');
+  }).catch(err => {
+    console.error('[SW] Failed to handle notification:', err);
+  });
+
+  event.waitUntil(showNotificationPromise);
 });
 
 // Notification click event
