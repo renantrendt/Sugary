@@ -1,35 +1,35 @@
 // Service Worker for Sugary PWA
 const CACHE_NAME = 'sugary-v1';
 
-// Random notification messages
-const MESSAGES = [
+// Random notifications with title + body pairs
+const NOTIFICATIONS = [
   // Educational
-  "🪦 35g/day = diabetes in ~10 years. 35g/week = 90+ years free. Choose wisely",
-  "⏱️ Every gram counts. Don't let your pancreas down today",
-  "💉 Insulin injections 4x daily for life. Or just eat less sugar. Your call",
-  "🏥 Diabetes costs $16,000/year to manage. Sugar is not that sweet",
-  "🧠 High sugar = brain fog, memory loss, dementia risk. Log your sugar today",
-  "📊 1 can of soda = 39g sugar. That's your whole week in one drink",
-  "🍫 A Snickers has 27g sugar. Almost a week's limit in one bar",
+  { title: "⚠️ Reality Check", body: "35g/day = diabetes in ~10 years. 35g/week = 90+ years free." },
+  { title: "⏱️ Tick Tock", body: "Every gram counts. Don't let your pancreas down today." },
+  { title: "💉 Choose Wisely", body: "Insulin injections 4x daily for life. Or just eat less sugar." },
+  { title: "💸 Sugar Tax", body: "Diabetes costs $16,000/year to manage. Sugar is not that sweet." },
+  { title: "🧠 Brain Fog", body: "High sugar = memory loss, dementia risk. Log your sugar." },
+  { title: "🥤 One Soda", body: "1 can = 39g sugar. That's your whole week in one drink." },
+  { title: "🍫 One Snickers", body: "27g sugar. Almost a week's limit in one bar." },
   // Casual
-  "🍬 Time to log today's sugar.",
-  "🤔 Did you eat sugar today?",
-  "😏 Be honest, how many grams today?",
-  "🔥 Don't lose your Sugary streak!",
-  "😤 Don't be a loser. Log your sugar.",
-  "👀 Come on, how much sugar today?",
-  "💕 I'll still love you, just tell me how many grams.",
+  { title: "🍬 Hey", body: "Time to log today's sugar." },
+  { title: "🤔 Quick Question", body: "Did you eat sugar today?" },
+  { title: "😏 Be Honest", body: "How many grams today?" },
+  { title: "🔥 Streak Alert", body: "Don't lose your Sugary streak!" },
+  { title: "😤 No Excuses", body: "Don't be a loser. Log your sugar." },
+  { title: "👀 We See You", body: "Come on, how much sugar today?" },
+  { title: "💕 No Judgment", body: "I'll still love you. Just tell me how many grams." },
   // Weekly ranking
-  "🎰 Sugar roulette results are in. Did you win or did your pancreas lose?",
-  "⚰️ Weekly diabetes speedrun leaderboard is live",
-  "🩺 Your weekly sugar audit is ready. Your future self is watching",
-  "💀 35g/day = diabetes in 10 years. How'd you do this week?",
-  "🎂 Your birthday cake in 20 years might come with insulin. Check your ranking",
+  { title: "🎰 Results In", body: "Did you win or did your pancreas lose?" },
+  { title: "⚰️ Leaderboard", body: "Weekly diabetes speedrun results are live." },
+  { title: "🩺 Audit Time", body: "Your weekly sugar report is ready." },
+  { title: "💀 Week's Over", body: "35g/day = diabetes in 10 years. How'd you do?" },
+  { title: "🎂 Future You", body: "Your birthday cake in 20 years might come with insulin." },
 ];
 
-// Get random message
-function getRandomMessage() {
-  return MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
+// Get random notification
+function getRandomNotification() {
+  return NOTIFICATIONS[Math.floor(Math.random() * NOTIFICATIONS.length)];
 }
 
 // Install event
@@ -48,9 +48,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   console.log('[SW] Push received');
   
+  const randomNotif = getRandomNotification();
+  
   let data = {
-    title: ' ',
-    body: getRandomMessage(),
+    title: randomNotif.title,
+    body: randomNotif.body,
     icon: '/favicon.png',
     badge: '/favicon.png',
     data: { url: '/' }
@@ -60,7 +62,6 @@ self.addEventListener('push', (event) => {
     try {
       data = { ...data, ...event.data.json() };
     } catch (e) {
-      // If there's text data, use it, otherwise keep random message
       const text = event.data.text();
       if (text && text.length > 0) {
         data.body = text;
@@ -92,14 +93,12 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Check if there's already a window open
       for (const client of windowClients) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           client.navigate(urlToOpen);
           return client.focus();
         }
       }
-      // If no window open, open a new one
       if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
       }
