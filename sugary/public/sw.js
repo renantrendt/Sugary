@@ -1,6 +1,13 @@
 // Service Worker for Sugary PWA
 const CACHE_NAME = 'sugary-v1';
 
+// AUTO-DETECTION SCHEDULE (Uses UTC - works globally):
+// 3:00-3:15 AM UTC    → update notifications (7pm PT previous day)
+// Mon 1:00 AM UTC     → weekly ranking (Sun 5pm PT)
+// 1:00-1:15 AM UTC    → daily reminders (5pm PT previous day, Mon-Sat)
+// Other times         → daily/educational mix
+// NOTE: All users worldwide get correct message TYPE, but at different local times
+
 // Notification messages organized by type
 const NOTIFICATIONS = {
   // App updates
@@ -22,7 +29,7 @@ const NOTIFICATIONS = {
     { title: "🎰 Results In", body: "Did you win or did your pancreas lose?" },
     { title: "⚰️ Leaderboard", body: "Weekly diabetes speedrun results are live." },
     { title: "🩺 Audit Time", body: "Your weekly sugar report is ready." },
-    { title: "💀 Week's Over", body: "35g/day = diabetes in 10 years. How'd you do?" },
+    { title: "💀 Over", body: "35g/day = diabetes in 10 years. How'd you do?" },
     { title: "🎂 Future You", body: "Your birthday cake in 20 years might come with insulin." },
   ],
   // Educational facts
@@ -48,6 +55,33 @@ const ALL_NOTIFICATIONS = [
 // Get random notification from a specific type or all
 function getRandomNotification(type = 'random') {
   let pool = ALL_NOTIFICATIONS;
+  
+  // If type is 'auto', determine based on UTC time (works globally)
+  if (type === 'auto') {
+    const now = new Date();
+    const day = now.getUTCDay(); // 0 = Sunday
+    const hour = now.getUTCHours();
+    const minute = now.getUTCMinutes();
+    
+    // 3:00-3:15 AM UTC = update notifications (corresponds to 7pm PT previous day)
+    if (hour === 3 && minute < 15) {
+      type = 'update';
+    }
+    // Monday 1:00 AM UTC = weekly ranking (Sunday 5pm PT)
+    else if (day === 1 && hour === 1) {
+      type = 'weekly';
+    }
+    // 1:00-1:15 AM UTC Mon-Sat = daily reminder (5pm PT previous day)
+    else if (hour === 1 && minute < 15 && day !== 1 && day !== 0) {
+      type = 'daily';
+    }
+    // Otherwise random from daily/educational
+    else {
+      type = Math.random() < 0.7 ? 'daily' : 'educational';
+    }
+    
+    console.log(`[SW] Auto-detected type: ${type} (UTC day: ${day}, hour: ${hour}:${minute})`);
+  }
   
   // If specific type requested and exists, use that pool
   if (type !== 'random' && NOTIFICATIONS[type]) {
@@ -120,10 +154,12 @@ self.addEventListener('push', (event) => {
   
   // If no custom message, use random from the specified type
   if (!useCustomMessage) {
-    const randomNotif = getRandomNotification(notificationType);
+    // For empty payloads with no type info, use 'auto' to detect from time
+    const finalType = notificationType || 'auto';
+    const randomNotif = getRandomNotification(finalType);
     data.title = randomNotif.title;
     data.body = randomNotif.body;
-    console.log('[SW] Using random notification type:', notificationType);
+    console.log('[SW] Using notification type:', finalType, '- Selected:', randomNotif.title);
   }
 
   console.log('[SW] Final notification data:', data);

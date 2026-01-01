@@ -33,7 +33,14 @@
 //     -H "Content-Type: application/json" \
 //     -d '{"type": "weekly", "urgency": "low"}'
 //
-// NOTE: iOS Safari cannot decrypt custom messages. Use "type" parameter instead.
+// NOTE: iOS Safari cannot decrypt custom messages or types.
+// iOS WORKAROUND: Send empty payload '{}' - Service Worker auto-detects type from UTC time:
+//   - 3:00-3:15 AM UTC    → update notifications
+//   - Monday 1 AM UTC     → weekly ranking  
+//   - 1:00-1:15 AM UTC    → daily reminders (Mon-Sat)
+//   - Other times         → daily/educational mix
+// Works globally - all users get correct TYPE regardless of timezone
+// 
 // Default urgency: "high" for custom messages, "normal" for random messages
 // ──────────────────────────────────────────────────────────────────────
  
