@@ -39,3 +39,17 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Drawer slide-in animation */
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.25s ease-out;
+}

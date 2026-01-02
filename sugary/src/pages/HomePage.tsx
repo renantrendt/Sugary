@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase, User, SugarLog } from "../lib/supabase";
-import { FaFire } from "react-icons/fa6";
+import { supabase, User, SugarLog, Group, GroupMember, Tracker, generateInviteCode } from "../lib/supabase";
+import { FaFire, FaBars, FaPlus, FaXmark, FaUserPlus, FaUsers, FaHouse, FaCheck, FaTrash } from "react-icons/fa6";
 import { 
   isPushSupported, 
   subscribeToPush, 
@@ -31,6 +31,24 @@ function HomePage() {
   const [isWarming, setIsWarming] = useState(false); // 2 sec warmup phase
   const [warmupProgress, setWarmupProgress] = useState(0); // 0 to 100
   const [canAskForNotifications, setCanAskForNotifications] = useState(true);
+  
+  // Drawer & Groups state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
+  const [trackers, setTrackers] = useState<Tracker[]>([]);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showJoinGroup, setShowJoinGroup] = useState(false);
+  const [showCreateTracker, setShowCreateTracker] = useState(false);
+  const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  const [newTrackerName, setNewTrackerName] = useState("");
+  const [newTrackerType, setNewTrackerType] = useState<"yes_no" | "amount">("yes_no");
+  const [newTrackerUnit, setNewTrackerUnit] = useState("");
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [showMembers, setShowMembers] = useState(false);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   
   const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const holdIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -166,6 +184,207 @@ function HomePage() {
 
     // Load ranking
     await loadRanking();
+    
+    // Load user's groups
+    await loadGroups(userId);
+  };
+
+  const loadGroups = async (userId: string) => {
+    // Get groups where user is a member
+    const { data: memberData } = await supabase
+      .from("group_members")
+      .select("group_id")
+      .eq("user_id", userId);
+
+    if (memberData && memberData.length > 0) {
+      const groupIds = memberData.map((m) => m.group_id);
+      const { data: groupsData } = await supabase
+        .from("groups")
+        .select("*")
+        .in("id", groupIds);
+
+      setGroups(groupsData || []);
+      
+      // Set first group as current if none selected
+      if (groupsData && groupsData.length > 0 && !currentGroup) {
+        setCurrentGroup(groupsData[0]);
+        await loadTrackers(groupsData[0].id);
+      }
+    }
+  };
+
+  const loadTrackers = async (groupId: string) => {
+    const { data } = await supabase
+      .from("trackers")
+      .select("*")
+      .eq("group_id", groupId)
+      .order("created_at", { ascending: true });
+
+    setTrackers(data || []);
+  };
+
+  const createGroup = async () => {
+    const userId = localStorage.getItem("userId");
+    if (!userId || !newGroupName.trim()) return;
+
+    const code = generateInviteCode();
+
+    const { data: newGroup, error } = await supabase
+      .from("groups")
+      .insert({
+        name: newGroupName.trim(),
+        created_by: userId,
+        invite_code: code,
+      })
+      .select()
+      .single();
+
+    if (error || !newGroup) {
+      console.error("Failed to create group:", error);
+      return;
+    }
+
+    // Add creator as member
+    await supabase.from("group_members").insert({
+      group_id: newGroup.id,
+      user_id: userId,
+    });
+
+    setGroups([...groups, newGroup]);
+    setCurrentGroup(newGroup);
+    setTrackers([]);
+    setNewGroupName("");
+    setShowCreateGroup(false);
+  };
+
+  const joinGroup = async () => {
+    const userId = localStorage.getItem("userId");
+    if (!userId || !joinCode.trim()) return;
+
+    // Find group by invite code
+    const { data: group } = await supabase
+      .from("groups")
+      .select("*")
+      .eq("invite_code", joinCode.trim().toUpperCase())
+      .single();
+
+    if (!group) {
+      alert("Invalid invite code");
+      return;
+    }
+
+    // Check if already a member
+    const { data: existing } = await supabase
+      .from("group_members")
+      .select("id")
+      .eq("group_id", group.id)
+      .eq("user_id", userId)
+      .single();
+
+    if (existing) {
+      alert("You're already in this group lol");
+      setJoinCode("");
+      setShowJoinGroup(false);
+      return;
+    }
+
+    // Join the group
+    await supabase.from("group_members").insert({
+      group_id: group.id,
+      user_id: userId,
+    });
+
+    setGroups([...groups, group]);
+    setCurrentGroup(group);
+    await loadTrackers(group.id);
+    setJoinCode("");
+    setShowJoinGroup(false);
+  };
+
+  const createTracker = async () => {
+    const userId = localStorage.getItem("userId");
+    if (!userId || !currentGroup || !newTrackerName.trim()) return;
+
+    const { data: newTracker, error } = await supabase
+      .from("trackers")
+      .insert({
+        group_id: currentGroup.id,
+        name: newTrackerName.trim(),
+        type: newTrackerType,
+        unit: newTrackerType === "amount" ? newTrackerUnit.trim() || null : null,
+        created_by: userId,
+      })
+      .select()
+      .single();
+
+    if (error || !newTracker) {
+      console.error("Failed to create tracker:", error);
+      return;
+    }
+
+    setTrackers([...trackers, newTracker]);
+    setNewTrackerName("");
+    setNewTrackerType("yes_no");
+    setNewTrackerUnit("");
+    setShowCreateTracker(false);
+  };
+
+  const selectGroup = async (group: Group) => {
+    setCurrentGroup(group);
+    await loadTrackers(group.id);
+    setShowGroupMenu(false);
+  };
+
+  const showInviteCode = () => {
+    if (currentGroup) {
+      setInviteCode(currentGroup.invite_code);
+    }
+  };
+
+  const viewGroupMembers = async () => {
+    if (!currentGroup) return;
+    
+    const { data } = await supabase
+      .from("group_members")
+      .select("*, users(*)")
+      .eq("group_id", currentGroup.id);
+    
+    setGroupMembers(data || []);
+    setShowMembers(true);
+  };
+
+  const deleteTracker = async (trackerId: string, trackerName: string) => {
+    if (!confirm(`Delete "${trackerName}"? This will remove all entries too.`)) return;
+    
+    await supabase.from("trackers").delete().eq("id", trackerId);
+    setTrackers(trackers.filter(t => t.id !== trackerId));
+  };
+
+  const deleteGroup = async () => {
+    if (!currentGroup) return;
+    if (!confirm(`Delete "${currentGroup.name}"? This will remove all trackers and entries.`)) return;
+    
+    await supabase.from("groups").delete().eq("id", currentGroup.id);
+    setGroups(groups.filter(g => g.id !== currentGroup.id));
+    setCurrentGroup(groups.length > 1 ? groups.find(g => g.id !== currentGroup.id) || null : null);
+    setTrackers([]);
+    setShowMembers(false);
+  };
+
+  const leaveGroup = async () => {
+    const userId = localStorage.getItem("userId");
+    if (!currentGroup || !userId) return;
+    if (!confirm(`Leave "${currentGroup.name}"?`)) return;
+    
+    await supabase
+      .from("group_members")
+      .delete()
+      .eq("group_id", currentGroup.id)
+      .eq("user_id", userId);
+    
+    setGroups(groups.filter(g => g.id !== currentGroup.id));
+    setCurrentGroup(groups.length > 1 ? groups.find(g => g.id !== currentGroup.id) || null : null);
+    setTrackers([]);
   };
 
   // Calculate streak for a user (consecutive days under 5g with 2-day grace period)
@@ -503,7 +722,346 @@ function HomePage() {
   });
 
   return (
-    <div className="flex w-full flex-col items-start bg-brand-50 h-screen">
+    <div className="flex w-full flex-col items-start bg-brand-50 h-screen relative">
+      {/* Hamburger menu button */}
+      <button
+        onClick={() => setDrawerOpen(true)}
+        className="absolute top-6 left-4 z-50 p-3 text-brand-600 hover:bg-brand-100 rounded-lg transition-colors"
+      >
+        <FaBars size={24} />
+      </button>
+
+      {/* Group selector at top right */}
+      <div className="absolute top-6 right-4 z-50">
+        <button
+          onClick={() => setShowGroupMenu(!showGroupMenu)}
+          className="flex items-center gap-2 px-3 py-2 bg-brand-100 hover:bg-brand-200 rounded-lg transition-colors"
+        >
+          <FaUsers className="text-brand-600" />
+          <span className="text-body-bold font-body-bold text-brand-600 max-w-[100px] truncate">
+            {currentGroup?.name || "No Group"}
+          </span>
+        </button>
+        
+        {/* Group dropdown */}
+        {showGroupMenu && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setShowGroupMenu(false)} />
+            <div className="absolute right-0 top-12 bg-brand-50 rounded-xl shadow-lg p-2 z-50 min-w-[200px] border border-brand-100">
+              {groups.map((group) => (
+                <button
+                  key={group.id}
+                  onClick={() => selectGroup(group)}
+                  className={`w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 transition-colors ${
+                    currentGroup?.id === group.id ? "bg-brand-100 text-brand-600" : "text-default-font"
+                  }`}
+                >
+                  {group.name}
+                </button>
+              ))}
+              {groups.length > 0 && <hr className="my-2 border-neutral-100" />}
+              <button
+                onClick={() => { setShowGroupMenu(false); setShowCreateGroup(true); }}
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 text-brand-600 flex items-center gap-2"
+              >
+                <FaPlus size={12} /> Create Group
+              </button>
+              <button
+                onClick={() => { setShowGroupMenu(false); setShowJoinGroup(true); }}
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 text-brand-600 flex items-center gap-2"
+              >
+                <FaUserPlus size={12} /> Join Group
+              </button>
+              {currentGroup && (
+                <>
+                  <button
+                    onClick={() => { setShowGroupMenu(false); viewGroupMembers(); }}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 text-neutral-700 flex items-center gap-2"
+                  >
+                    <FaUsers size={12} /> View Members
+                  </button>
+                  <button
+                    onClick={() => { setShowGroupMenu(false); showInviteCode(); }}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 text-brand-600 flex items-center gap-2"
+                  >
+                    <FaUserPlus size={12} /> Invite to Group
+                  </button>
+                  <hr className="my-2 border-neutral-100" />
+                  {currentGroup.created_by === localStorage.getItem("userId") ? (
+                    <button
+                      onClick={() => { setShowGroupMenu(false); deleteGroup(); }}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-error-50 text-error-600 flex items-center gap-2"
+                    >
+                      <FaTrash size={12} /> Delete Group
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { setShowGroupMenu(false); leaveGroup(); }}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-error-50 text-error-600 flex items-center gap-2"
+                    >
+                      <FaXmark size={12} /> Leave Group
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Slide-out drawer */}
+      {drawerOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={() => setDrawerOpen(false)}
+          />
+          {/* Drawer */}
+          <div className="fixed top-0 left-0 h-full w-72 bg-brand-50 shadow-xl z-50 flex flex-col animate-slide-in-left border-r border-brand-100">
+            <div className="flex items-center justify-between p-4 border-b border-brand-100">
+              <span className="text-heading-3 font-heading-3 text-brand-600">Menu</span>
+              <button onClick={() => setDrawerOpen(false)} className="p-2 text-brand-400 hover:bg-brand-100 rounded-lg">
+                <FaXmark size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* Home button */}
+              <button
+                onClick={() => { setDrawerOpen(false); }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-brand-50 text-brand-600 mb-4"
+              >
+                <FaHouse size={18} />
+                <span className="text-body-bold font-body-bold">Home (Sugar)</span>
+              </button>
+
+              {/* Current group's trackers */}
+              {currentGroup ? (
+                <>
+                  <div className="text-caption-bold font-caption-bold text-subtext-color mb-2 px-2">
+                    {currentGroup.name}
+                  </div>
+                  {trackers.map((tracker) => (
+                    <div key={tracker.id} className="flex items-center gap-1 mb-1">
+                      <button
+                        onClick={() => { setDrawerOpen(false); navigate(`/tracker/${tracker.id}`); }}
+                        className="flex-1 flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-neutral-50 text-default-font"
+                      >
+                        <span className={`w-2 h-2 rounded-full ${tracker.type === 'yes_no' ? 'bg-brand-400' : 'bg-brand-600'}`} />
+                        <span className="text-body font-body">{tracker.name}</span>
+                        <span className="text-caption font-caption text-subtext-color ml-auto">
+                          {tracker.type === 'yes_no' ? 'Y/N' : tracker.unit || '#'}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => deleteTracker(tracker.id, tracker.name)}
+                        className="p-2 text-neutral-400 hover:text-error-500 hover:bg-error-50 rounded-lg transition-colors"
+                      >
+                        <FaTrash size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  
+                  {/* Create tracker button */}
+                  <button
+                    onClick={() => { setDrawerOpen(false); setShowCreateTracker(true); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-brand-50 text-brand-600 mt-2 border-2 border-dashed border-brand-200"
+                  >
+                    <FaPlus size={14} />
+                    <span className="text-body font-body">Add Tracker</span>
+                  </button>
+                </>
+              ) : (
+                <div className="text-center py-8 text-subtext-color">
+                  <p className="text-body font-body mb-4">No group selected</p>
+                  <button
+                    onClick={() => { setDrawerOpen(false); setShowCreateGroup(true); }}
+                    className="px-4 py-2 bg-brand-600 text-white rounded-lg text-body-bold font-body-bold"
+                  >
+                    Create a Group
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Create Group Modal */}
+      {showCreateGroup && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCreateGroup(false)}>
+            <div className="bg-brand-50 rounded-xl p-6 w-full max-w-sm shadow-xl border border-brand-100" onClick={(e) => e.stopPropagation()}>
+              <h2 className="text-heading-3 font-heading-3 text-brand-600 mb-4">Create Group</h2>
+              <input
+                type="text"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder="Group name (e.g. Roommates)"
+                className="w-full px-4 py-3 rounded-lg border border-brand-200 bg-white mb-4 text-body font-body focus:outline-none focus:ring-2 focus:ring-brand-400"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setShowCreateGroup(false)} className="flex-1 py-2 rounded-lg bg-brand-100 text-brand-600 hover:bg-brand-200 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={createGroup} className="flex-1 py-2 rounded-lg bg-brand-600 text-white">
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Join Group Modal */}
+      {showJoinGroup && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowJoinGroup(false)}>
+            <div className="bg-brand-50 rounded-xl p-6 w-full max-w-sm shadow-xl border border-brand-100" onClick={(e) => e.stopPropagation()}>
+              <h2 className="text-heading-3 font-heading-3 text-brand-600 mb-4">Join Group</h2>
+              <input
+                type="text"
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                placeholder="Enter invite code"
+                className="w-full px-4 py-3 rounded-lg border border-brand-200 bg-white mb-4 text-body font-body text-center tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-brand-400"
+                maxLength={6}
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setShowJoinGroup(false)} className="flex-1 py-2 rounded-lg bg-brand-100 text-brand-600 hover:bg-brand-200 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={joinGroup} className="flex-1 py-2 rounded-lg bg-brand-600 text-white">
+                  Join
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Invite Code Modal */}
+      {inviteCode && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setInviteCode(null)}>
+            <div className="bg-brand-50 rounded-xl p-6 w-full max-w-sm shadow-xl border border-brand-100 text-center" onClick={(e) => e.stopPropagation()}>
+              <h2 className="text-heading-3 font-heading-3 text-brand-600 mb-2">Invite Code</h2>
+              <p className="text-caption font-caption text-subtext-color mb-4">Share this code with friends to join {currentGroup?.name}</p>
+              <div className="text-heading-1 font-heading-1 text-brand-600 tracking-widest bg-brand-50 py-4 rounded-lg mb-4">
+                {inviteCode}
+              </div>
+              <button
+                onClick={() => { navigator.clipboard.writeText(inviteCode); }}
+                className="w-full py-2 rounded-lg bg-brand-600 text-white"
+              >
+                Copy Code
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Group Members Modal */}
+      {showMembers && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowMembers(false)}>
+            <div className="bg-brand-50 rounded-xl p-6 w-full max-w-sm shadow-xl border border-brand-100" onClick={(e) => e.stopPropagation()}>
+              <h2 className="text-heading-3 font-heading-3 text-brand-600 mb-4">
+                {currentGroup?.name} Members
+              </h2>
+              <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto">
+                {groupMembers.map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex items-center gap-3 p-3 bg-brand-100/50 rounded-lg"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-lg">
+                      {member.users?.name_tag?.charAt(0).toUpperCase() || "?"}
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-body-bold font-body-bold text-default-font">
+                        {member.users?.name_tag}
+                      </span>
+                      {member.user_id === currentGroup?.created_by && (
+                        <span className="ml-2 text-caption font-caption text-brand-600 bg-brand-50 px-2 py-0.5 rounded">
+                          Owner
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => setShowMembers(false)}
+                className="w-full mt-4 py-2 rounded-lg bg-brand-100 text-brand-600 hover:bg-brand-200 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Create Tracker Modal */}
+      {showCreateTracker && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCreateTracker(false)}>
+            <div className="bg-brand-50 rounded-xl p-6 w-full max-w-sm shadow-xl border border-brand-100" onClick={(e) => e.stopPropagation()}>
+              <h2 className="text-heading-3 font-heading-3 text-brand-600 mb-4">Create Tracker</h2>
+              
+              <input
+                type="text"
+                value={newTrackerName}
+                onChange={(e) => setNewTrackerName(e.target.value)}
+                placeholder="Tracker name (e.g. Dishes)"
+                className="w-full px-4 py-3 rounded-lg border border-brand-200 bg-white mb-4 text-body font-body focus:outline-none focus:ring-2 focus:ring-brand-400"
+              />
+              
+              {/* Type selector */}
+              <div className="flex rounded-lg bg-brand-100 p-1 mb-4">
+                <button
+                  onClick={() => setNewTrackerType("yes_no")}
+                  className={`flex-1 py-2 rounded-md text-body font-body transition-colors ${
+                    newTrackerType === "yes_no" ? "bg-brand-50 text-brand-600 shadow-sm" : "text-brand-400"
+                  }`}
+                >
+                  Yes / No
+                </button>
+                <button
+                  onClick={() => setNewTrackerType("amount")}
+                  className={`flex-1 py-2 rounded-md text-body font-body transition-colors ${
+                    newTrackerType === "amount" ? "bg-brand-50 text-brand-600 shadow-sm" : "text-brand-400"
+                  }`}
+                >
+                  Amount
+                </button>
+              </div>
+              
+              {/* Unit field for amount type */}
+              {newTrackerType === "amount" && (
+                <input
+                  type="text"
+                  value={newTrackerUnit}
+                  onChange={(e) => setNewTrackerUnit(e.target.value)}
+                  placeholder="Unit (e.g. cups, g, ml)"
+                  className="w-full px-4 py-3 rounded-lg border border-brand-200 bg-white mb-4 text-body font-body focus:outline-none focus:ring-2 focus:ring-brand-400"
+                />
+              )}
+              
+              <div className="flex gap-2">
+                <button onClick={() => setShowCreateTracker(false)} className="flex-1 py-2 rounded-lg bg-brand-100 text-brand-600 hover:bg-brand-200 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={createTracker} className="flex-1 py-2 rounded-lg bg-brand-600 text-white">
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Top bar with date and ranking */}
       <div className="mt-6 flex w-full flex-col items-center justify-center gap-4 px-6 pt-8 relative z-10">
         {/* Date display centered */}
