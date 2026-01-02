@@ -716,7 +716,7 @@ function HomePage() {
           Hold for 2 seconds to start adding sugar
         </span>
         <span className="text-caption font-caption text-subtext-color">
-            Limit to die: 35g/week
+            Streak: less than 5g/day
           </span>
         
       </div>
