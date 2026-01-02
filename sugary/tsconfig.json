@@ -30,6 +30,10 @@
   "include": [
     "src"
   ],
+  "exclude": [
+    "edge-function-v2.ts",
+    "edge-function-v3.ts"
+  ],
   "references": [
     {
       "path": "./tsconfig.node.json"

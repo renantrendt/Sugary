@@ -251,31 +251,69 @@ function HomePage() {
   };
 
   const loadRanking = async () => {
-    const today = getTodayDate();
+    // Get start of current week (Sunday)
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sunday
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - dayOfWeek);
+    const weekStart = startOfWeek.toISOString().split("T")[0];
     
-    // Get all users who have logged sugar today
+    // Get end of current week (Saturday) to include all days
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    const weekEnd = endOfWeek.toISOString().split("T")[0];
+    
+    // Get all sugar logs for this week (Sun-Sat)
     const { data: logs } = await supabase
       .from("sugar_logs")
-      .select("user_id, sugar_grams, users(name_tag, longest_streak)")
-      .eq("date", today)
-      .order("sugar_grams", { ascending: true });
+      .select("user_id, sugar_grams, date, users(name_tag, longest_streak)")
+      .gte("date", weekStart)
+      .lte("date", weekEnd);
 
     if (logs) {
-      // Calculate streak for each user
-      const rankingData = await Promise.all(
-        logs.map(async (log: any) => {
-          const streak = await calculateStreak(log.user_id);
-          const currentLongest = log.users?.longest_streak || 0;
-          const longest_streak = await updateLongestStreak(log.user_id, streak, currentLongest);
-          return {
+      // Group by user and sum their weekly sugar
+      const userTotals = new Map<string, { 
+        user_id: string; 
+        sugar: number; 
+        name_tag: string; 
+        longest_streak: number;
+      }>();
+      
+      for (const log of logs as any[]) {
+        const existing = userTotals.get(log.user_id);
+        if (existing) {
+          existing.sugar += log.sugar_grams;
+        } else {
+          userTotals.set(log.user_id, {
             user_id: log.user_id,
-            name_tag: log.users?.name_tag || "Unknown",
             sugar: log.sugar_grams,
+            name_tag: log.users?.name_tag || "Unknown",
+            longest_streak: log.users?.longest_streak || 0,
+          });
+        }
+      }
+
+      // Calculate streak for each user and build ranking
+      const rankingData = await Promise.all(
+        Array.from(userTotals.values()).map(async (userData) => {
+          const streak = await calculateStreak(userData.user_id);
+          const longest_streak = await updateLongestStreak(
+            userData.user_id, 
+            streak, 
+            userData.longest_streak
+          );
+          return {
+            user_id: userData.user_id,
+            name_tag: userData.name_tag,
+            sugar: userData.sugar,
             streak,
             longest_streak,
           };
         })
       );
+      
+      // Sort by sugar (ascending - less sugar = better)
+      rankingData.sort((a, b) => a.sugar - b.sugar);
       setRanking(rankingData);
     }
   };

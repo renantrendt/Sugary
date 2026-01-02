@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Supabase Edge Function: send-notification
 // Deploy to: Supabase Dashboard → Edge Functions → send-weekly-ranking
 //
