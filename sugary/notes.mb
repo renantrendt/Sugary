@@ -1,0 +1,30 @@
+1. when you create a yes & no project, after you've answerd yes or no,
+ -> You are being directed to the home screen instead of to the calendar
+and-> Even if I mark No, the text in the calender says i mmarked yes
+
+2. Instead of a "marked yes today", make the Yes or No button be in there, and remove completely
+the marked yes/no today.
+
+3. Instead of the Menu text, it should be the groups button there. And then the Home button,
+the trackers, will expand down.
+
+4. The home/main sugar thing, should also count in the groups meaning that it will only show
+the ranking of the people in the groups
+
+5. When you creake a amount project, there's no space between the Unit and the number amount
+ -> Also in there, we need to have ranking too, same way as in the main home screen, but just
+ that the units will change
+
+ 6. Add to the groups a Public one, that everyone can see, and you cant leave.
+  -> Also the sugar, if you add X amount on your own group, the same would go to the Public one
+
+Beside the button delete we should have a button edit, that show options to mark it as public and share my ranking public too
+
+  Public apps could be trickier in a development standpoint. We should discuss the logic because now
+  we are talking about a multi-tenant app
+
+Groups can choose to publish their trackers, and individual users Inside those groups, can
+make their own informationm (e.g Tea amount) pubic meaning that the Public Tea tracker would
+have their information. If another group also has Tea tracking, and they publish (a waning
+appears and says that it already exist), but inside the group people also could publish their
+own individul information, in the Tea tracking.

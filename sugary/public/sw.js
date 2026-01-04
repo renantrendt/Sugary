@@ -71,9 +71,13 @@ function getRandomNotification(type = 'random') {
     else if (hour === 1 && minute < 15 && day >= 2 && day <= 6) {
       type = 'daily';
     }
-    // ALL OTHER TIMES = update notifications (anytime outside daily/weekly windows)
+    // 10 PM UTC (2pm PT) = educational facts
+    else if (hour === 22) {
+      type = 'educational';
+    }
+    // ALL OTHER TIMES = random from daily + educational (not just boring update)
     else {
-      type = 'update';
+      type = Math.random() < 0.5 ? 'daily' : 'educational';
     }
     
     console.log(`[SW] Auto-detected type: ${type} (UTC day: ${day}, hour: ${hour}:${minute})`);
