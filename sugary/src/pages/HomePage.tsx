@@ -57,8 +57,20 @@ function HomePage() {
 
   // Get today's date in user's timezone
   const getTodayDate = useCallback(() => {
-    return new Date().toISOString().split("T")[0];
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }, []);
+
+  // Helper to format any date as YYYY-MM-DD in local timezone
+  const formatDateLocal = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   // Listen for push notifications when app is open (from service worker)
   useEffect(() => {
@@ -152,6 +164,13 @@ function HomePage() {
     };
   }, [navigate]);
 
+  // Reload ranking when current group changes
+  useEffect(() => {
+    if (currentUser) {
+      loadRanking();
+    }
+  }, [currentGroup?.id]);
+
   const loadUserData = async (userId: string) => {
     // Get user
     const { data: user } = await supabase
@@ -190,6 +209,44 @@ function HomePage() {
   };
 
   const loadGroups = async (userId: string) => {
+    // Ensure Public group exists
+    let { data: publicGroup } = await supabase
+      .from("groups")
+      .select("*")
+      .eq("name", "Public")
+      .single();
+
+    if (!publicGroup) {
+      // Create Public group if it doesn't exist
+      const { data: newPublicGroup } = await supabase
+        .from("groups")
+        .insert({
+          name: "Public",
+          created_by: userId,
+          invite_code: "PUBLIC",
+        })
+        .select()
+        .single();
+      publicGroup = newPublicGroup;
+    }
+
+    // Ensure user is a member of Public group
+    if (publicGroup) {
+      const { data: existingMember } = await supabase
+        .from("group_members")
+        .select("id")
+        .eq("group_id", publicGroup.id)
+        .eq("user_id", userId)
+        .single();
+
+      if (!existingMember) {
+        await supabase.from("group_members").insert({
+          group_id: publicGroup.id,
+          user_id: userId,
+        });
+      }
+    }
+
     // Get groups where user is a member
     const { data: memberData } = await supabase
       .from("group_members")
@@ -203,12 +260,20 @@ function HomePage() {
         .select("*")
         .in("id", groupIds);
 
-      setGroups(groupsData || []);
+      // Sort groups so Public is first
+      const sortedGroups = (groupsData || []).sort((a, b) => {
+        if (a.name === "Public") return -1;
+        if (b.name === "Public") return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      setGroups(sortedGroups);
       
-      // Set first group as current if none selected
-      if (groupsData && groupsData.length > 0 && !currentGroup) {
-        setCurrentGroup(groupsData[0]);
-        await loadTrackers(groupsData[0].id);
+      // Set Public group as current if none selected
+      if (sortedGroups.length > 0 && !currentGroup) {
+        const defaultGroup = sortedGroups.find(g => g.name === "Public") || sortedGroups[0];
+        setCurrentGroup(defaultGroup);
+        await loadTrackers(defaultGroup.id);
       }
     }
   };
@@ -397,7 +462,7 @@ function HomePage() {
       .from("sugar_logs")
       .select("date, sugar_grams")
       .eq("user_id", userId)
-      .gte("date", sixtyDaysAgo.toISOString().split("T")[0])
+      .gte("date", formatDateLocal(sixtyDaysAgo))
       .order("date", { ascending: false });
 
     // Create a map of date -> sugar_grams
@@ -416,7 +481,7 @@ function HomePage() {
     checkDate.setDate(checkDate.getDate() - 1);
     
     for (let i = 0; i < 60; i++) {
-      const dateStr = checkDate.toISOString().split("T")[0];
+      const dateStr = formatDateLocal(checkDate);
       const sugar = logMap.get(dateStr);
       
       if (sugar !== undefined) {
@@ -470,24 +535,48 @@ function HomePage() {
   };
 
   const loadRanking = async () => {
+    // Get members of current group (or all users if no group)
+    let memberUserIds: string[] = [];
+    
+    if (currentGroup) {
+      const { data: members } = await supabase
+        .from("group_members")
+        .select("user_id")
+        .eq("group_id", currentGroup.id);
+      
+      memberUserIds = members?.map(m => m.user_id) || [];
+      
+      if (memberUserIds.length === 0) {
+        setRanking([]);
+        return;
+      }
+    }
+    
     // Get start of current week (Sunday)
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0 = Sunday
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - dayOfWeek);
-    const weekStart = startOfWeek.toISOString().split("T")[0];
+    const weekStart = formatDateLocal(startOfWeek);
     
     // Get end of current week (Saturday) to include all days
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
-    const weekEnd = endOfWeek.toISOString().split("T")[0];
+    const weekEnd = formatDateLocal(endOfWeek);
     
-    // Get all sugar logs for this week (Sun-Sat)
-    const { data: logs } = await supabase
+    // Build query for sugar logs
+    let query = supabase
       .from("sugar_logs")
       .select("user_id, sugar_grams, date, users(name_tag, longest_streak)")
       .gte("date", weekStart)
       .lte("date", weekEnd);
+    
+    // Filter by group members if we have a group selected
+    if (currentGroup && memberUserIds.length > 0) {
+      query = query.in("user_id", memberUserIds);
+    }
+    
+    const { data: logs } = await query;
 
     if (logs) {
       // Group by user and sum their weekly sugar
@@ -539,8 +628,8 @@ function HomePage() {
 
   // Get total sugar for a specific month
   const getMonthSugar = async (userId: string, year: number, month: number): Promise<number> => {
-    const startOfMonth = new Date(year, month, 1).toISOString().split("T")[0];
-    const endOfMonth = new Date(year, month + 1, 0).toISOString().split("T")[0];
+    const startOfMonth = formatDateLocal(new Date(year, month, 1));
+    const endOfMonth = formatDateLocal(new Date(year, month + 1, 0));
 
     const { data: logs } = await supabase
       .from("sugar_logs")
@@ -731,84 +820,6 @@ function HomePage() {
         <FaBars size={24} />
       </button>
 
-      {/* Group selector at top right */}
-      <div className="absolute top-6 right-4 z-50">
-        <button
-          onClick={() => setShowGroupMenu(!showGroupMenu)}
-          className="flex items-center gap-2 px-3 py-2 bg-brand-100 hover:bg-brand-200 rounded-lg transition-colors"
-        >
-          <FaUsers className="text-brand-600" />
-          <span className="text-body-bold font-body-bold text-brand-600 max-w-[100px] truncate">
-            {currentGroup?.name || "No Group"}
-          </span>
-        </button>
-        
-        {/* Group dropdown */}
-        {showGroupMenu && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setShowGroupMenu(false)} />
-            <div className="absolute right-0 top-12 bg-brand-50 rounded-xl shadow-lg p-2 z-50 min-w-[200px] border border-brand-100">
-              {groups.map((group) => (
-                <button
-                  key={group.id}
-                  onClick={() => selectGroup(group)}
-                  className={`w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 transition-colors ${
-                    currentGroup?.id === group.id ? "bg-brand-100 text-brand-600" : "text-default-font"
-                  }`}
-                >
-                  {group.name}
-                </button>
-              ))}
-              {groups.length > 0 && <hr className="my-2 border-neutral-100" />}
-              <button
-                onClick={() => { setShowGroupMenu(false); setShowCreateGroup(true); }}
-                className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 text-brand-600 flex items-center gap-2"
-              >
-                <FaPlus size={12} /> Create Group
-              </button>
-              <button
-                onClick={() => { setShowGroupMenu(false); setShowJoinGroup(true); }}
-                className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 text-brand-600 flex items-center gap-2"
-              >
-                <FaUserPlus size={12} /> Join Group
-              </button>
-              {currentGroup && (
-                <>
-                  <button
-                    onClick={() => { setShowGroupMenu(false); viewGroupMembers(); }}
-                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 text-neutral-700 flex items-center gap-2"
-                  >
-                    <FaUsers size={12} /> View Members
-                  </button>
-                  <button
-                    onClick={() => { setShowGroupMenu(false); showInviteCode(); }}
-                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 text-brand-600 flex items-center gap-2"
-                  >
-                    <FaUserPlus size={12} /> Invite to Group
-                  </button>
-                  <hr className="my-2 border-neutral-100" />
-                  {currentGroup.created_by === localStorage.getItem("userId") ? (
-                    <button
-                      onClick={() => { setShowGroupMenu(false); deleteGroup(); }}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-error-50 text-error-600 flex items-center gap-2"
-                    >
-                      <FaTrash size={12} /> Delete Group
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => { setShowGroupMenu(false); leaveGroup(); }}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-error-50 text-error-600 flex items-center gap-2"
-                    >
-                      <FaXmark size={12} /> Leave Group
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
       {/* Slide-out drawer */}
       {drawerOpen && (
         <>
@@ -819,22 +830,99 @@ function HomePage() {
           />
           {/* Drawer */}
           <div className="fixed top-0 left-0 h-full w-72 bg-brand-50 shadow-xl z-50 flex flex-col animate-slide-in-left border-r border-brand-100">
+            {/* Header with close button */}
             <div className="flex items-center justify-between p-4 border-b border-brand-100">
-              <span className="text-heading-3 font-heading-3 text-brand-600">Menu</span>
+              <button
+                onClick={() => setShowGroupMenu(!showGroupMenu)}
+                className="flex items-center gap-2 px-3 py-2 bg-brand-100 hover:bg-brand-200 rounded-lg transition-colors"
+              >
+                <FaUsers className="text-brand-600" size={16} />
+                <span className="text-body-bold font-body-bold text-brand-600 max-w-[140px] truncate">
+                  {currentGroup?.name || "Select Group"}
+                </span>
+              </button>
               <button onClick={() => setDrawerOpen(false)} className="p-2 text-brand-400 hover:bg-brand-100 rounded-lg">
                 <FaXmark size={20} />
               </button>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4">
-              {/* Home button */}
+              {/* Group menu - expands inline */}
+              {showGroupMenu && (
+                <div className="mb-4 bg-white rounded-xl p-2 border border-brand-100">
+                  {groups.map((group) => (
+                    <button
+                      key={group.id}
+                      onClick={() => { selectGroup(group); setShowGroupMenu(false); }}
+                      className={`w-full text-left px-3 py-2 rounded-lg hover:bg-brand-100 transition-colors ${
+                        currentGroup?.id === group.id ? "bg-brand-100 text-brand-600" : "text-default-font"
+                      }`}
+                    >
+                      {group.name}
+                    </button>
+                  ))}
+                  {groups.length > 0 && <hr className="my-2 border-brand-100" />}
+                  <button
+                    onClick={() => { setShowGroupMenu(false); setDrawerOpen(false); setShowCreateGroup(true); }}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-100 text-brand-600 flex items-center gap-2"
+                  >
+                    <FaPlus size={12} /> Create Group
+                  </button>
+                  <button
+                    onClick={() => { setShowGroupMenu(false); setDrawerOpen(false); setShowJoinGroup(true); }}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-100 text-brand-600 flex items-center gap-2"
+                  >
+                    <FaUserPlus size={12} /> Join Group
+                  </button>
+                  {currentGroup && (
+                    <>
+                      <button
+                        onClick={() => { setShowGroupMenu(false); setDrawerOpen(false); viewGroupMembers(); }}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-100 text-neutral-700 flex items-center gap-2"
+                      >
+                        <FaUsers size={12} /> View Members
+                      </button>
+                      <button
+                        onClick={() => { setShowGroupMenu(false); setDrawerOpen(false); showInviteCode(); }}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-100 text-brand-600 flex items-center gap-2"
+                      >
+                        <FaUserPlus size={12} /> Invite to Group
+                      </button>
+                      <hr className="my-2 border-brand-100" />
+                      {currentGroup.created_by === localStorage.getItem("userId") ? (
+                        <button
+                          onClick={() => { setShowGroupMenu(false); setDrawerOpen(false); deleteGroup(); }}
+                          className="w-full text-left px-3 py-2 rounded-lg hover:bg-error-50 text-error-600 flex items-center gap-2"
+                        >
+                          <FaTrash size={12} /> Delete Group
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => { setShowGroupMenu(false); setDrawerOpen(false); leaveGroup(); }}
+                          className="w-full text-left px-3 py-2 rounded-lg hover:bg-error-50 text-error-600 flex items-center gap-2"
+                        >
+                          <FaXmark size={12} /> Leave Group
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+              {/* Home button - always visible, goes to main sugar tracker */}
               <button
-                onClick={() => { setDrawerOpen(false); }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-brand-50 text-brand-600 mb-4"
+                onClick={() => { setDrawerOpen(false); navigate("/"); }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-brand-100 text-brand-600 mb-2 hover:bg-brand-200 transition-colors"
               >
                 <FaHouse size={18} />
-                <span className="text-body-bold font-body-bold">Home (Sugar)</span>
+                <span className="text-body-bold font-body-bold">Sugar Tracker</span>
               </button>
+
+              {/* Divider */}
+              {currentGroup && trackers.length > 0 && (
+                <div className="text-caption font-caption text-subtext-color px-2 py-2 mt-2">
+                  Trackers
+                </div>
+              )}
 
               {/* Current group's trackers */}
               {currentGroup ? (

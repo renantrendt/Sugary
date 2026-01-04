@@ -59,6 +59,20 @@ function LoginPage() {
 
         if (insertError) throw insertError;
 
+        // Auto-join the "Public" group
+        const { data: publicGroup } = await supabase
+          .from("groups")
+          .select("id")
+          .eq("name", "Public")
+          .single();
+
+        if (publicGroup) {
+          await supabase.from("group_members").insert({
+            group_id: publicGroup.id,
+            user_id: newUser.id,
+          });
+        }
+
         localStorage.setItem("userId", newUser.id);
         localStorage.setItem("nameTag", cleanNameTag);
         navigate("/");
@@ -74,6 +88,30 @@ function LoginPage() {
           setError("Name tag not found. Maybe sign up?");
           setIsLoading(false);
           return;
+        }
+
+        // Ensure user is in Public group (for legacy users)
+        const { data: publicGroup } = await supabase
+          .from("groups")
+          .select("id")
+          .eq("name", "Public")
+          .single();
+
+        if (publicGroup) {
+          // Check if already a member
+          const { data: existingMember } = await supabase
+            .from("group_members")
+            .select("id")
+            .eq("group_id", publicGroup.id)
+            .eq("user_id", user.id)
+            .single();
+
+          if (!existingMember) {
+            await supabase.from("group_members").insert({
+              group_id: publicGroup.id,
+              user_id: user.id,
+            });
+          }
         }
 
         localStorage.setItem("userId", user.id);

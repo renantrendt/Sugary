@@ -13,7 +13,6 @@ function TrackerPage() {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [todayAnswer, setTodayAnswer] = useState<boolean | null>(null);
-  const [showPrompt, setShowPrompt] = useState(false);
   
   // Amount tracker states
   const [todayAmount, setTodayAmount] = useState(0);
@@ -28,8 +27,15 @@ function TrackerPage() {
 
   const userId = localStorage.getItem("userId");
 
+  const formatDateLocal = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const getTodayDate = useCallback(() => {
-    return new Date().toISOString().split("T")[0];
+    return formatDateLocal(new Date());
   }, []);
 
   useEffect(() => {
@@ -86,9 +92,6 @@ function TrackerPage() {
       } else if ('amount' in todayEntry.value) {
         setTodayAmount(todayEntry.value.amount);
       }
-    } else if (trackerData.type === 'yes_no') {
-      // Show prompt for yes/no trackers if no entry today
-      setShowPrompt(true);
     }
   };
 
@@ -100,8 +103,8 @@ function TrackerPage() {
       .from("tracker_entries")
       .select("*, users(*)")
       .eq("tracker_id", tId)
-      .gte("date", startOfMonth.toISOString().split("T")[0])
-      .lte("date", endOfMonth.toISOString().split("T")[0]);
+      .gte("date", formatDateLocal(startOfMonth))
+      .lte("date", formatDateLocal(endOfMonth));
 
     setEntries(data || []);
   };
@@ -128,15 +131,9 @@ function TrackerPage() {
     );
 
     setTodayAnswer(answer);
-    setShowPrompt(false);
     
-    if (!answer) {
-      // If answered No, go back to home
-      navigate("/");
-    } else {
-      // If Yes, reload entries to show on calendar
-      await loadEntries(trackerId);
-    }
+    // Always reload entries and stay on calendar (don't redirect home)
+    await loadEntries(trackerId);
   };
 
   // Amount tracker hold logic
@@ -241,7 +238,7 @@ function TrackerPage() {
 
   // Get entries for a specific date
   const getEntriesForDate = (date: Date) => {
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = formatDateLocal(date);
     return entries.filter((e) => e.date === dateStr && 'answer' in e.value && e.value.answer === true);
   };
 
@@ -253,35 +250,26 @@ function TrackerPage() {
     );
   }
 
-  // Yes/No Prompt
-  if (showPrompt && tracker.type === 'yes_no') {
-    return (
-      <div className="flex w-full h-screen flex-col items-center justify-center bg-brand-50 px-6 gap-8">
-        <h1 className="text-heading-1 font-heading-1 text-brand-600 text-center">
-          {tracker.name}?
-        </h1>
-        <div className="flex gap-4">
-          <button
-            onClick={() => handleAnswer(true)}
-            className="px-12 py-6 rounded-2xl bg-brand-600 text-white text-heading-2 font-heading-2 hover:bg-brand-500 transition-colors shadow-md"
-          >
-            Yes
-          </button>
-          <button
-            onClick={() => handleAnswer(false)}
-            className="px-12 py-6 rounded-2xl bg-brand-100 text-brand-600 text-heading-2 font-heading-2 hover:bg-brand-200 transition-colors"
-          >
-            No
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Yes/No trackers always show the calendar view with inline Yes/No buttons
 
-  // Amount Tracker View
+  // Amount Tracker View - get today's ranking
+  const getTodayRanking = () => {
+    const today = getTodayDate();
+    const todayEntries = entries.filter(e => e.date === today && 'amount' in e.value);
+    return todayEntries
+      .map(e => ({
+        name_tag: e.users?.name_tag || "?",
+        amount: (e.value as { amount: number }).amount,
+        isCurrentUser: e.user_id === userId
+      }))
+      .sort((a, b) => a.amount - b.amount); // Lower is better
+  };
+
   if (tracker.type === 'amount') {
+    const ranking = getTodayRanking();
+    
     return (
-      <div className="flex w-full flex-col items-center bg-brand-50 h-screen">
+      <div className="flex w-full flex-col items-center bg-brand-50 h-screen overflow-auto">
         {/* Header */}
         <div className="flex w-full items-center justify-between px-6 pt-8">
           <button onClick={() => navigate("/")} className="p-2 text-brand-600 hover:bg-brand-100 rounded-lg">
@@ -291,11 +279,29 @@ function TrackerPage() {
           <div className="w-10" />
         </div>
 
+        {/* Ranking */}
+        {ranking.length > 0 && (
+          <div className="flex w-full items-center gap-6 overflow-x-auto px-6 py-4 hide-scrollbar">
+            <div className="flex-1 min-w-0" />
+            {ranking.map((user, i) => (
+              <div key={i} className="flex flex-col items-center gap-1 flex-shrink-0">
+                <span className="text-heading-2 font-heading-2 text-brand-600">
+                  {user.amount} {tracker.unit || ''}
+                </span>
+                <span className={`text-caption font-caption ${user.isCurrentUser ? "text-brand-600 font-bold" : "text-default-font"}`}>
+                  {user.name_tag}
+                </span>
+              </div>
+            ))}
+            <div className="flex-1 min-w-0" />
+          </div>
+        )}
+
         {/* Main content */}
         <div className="flex w-full grow flex-col items-center justify-center gap-6 px-6">
           <div className="flex flex-col items-center gap-2">
             <span className="text-heading-1 font-heading-1 text-brand-600">
-              {isHolding ? todayAmount + holdingAmount : todayAmount}{tracker.unit || ''}
+              {isHolding ? todayAmount + holdingAmount : todayAmount} {tracker.unit || ''}
             </span>
             <span className="text-body font-body text-subtext-color">today</span>
           </div>
@@ -369,12 +375,29 @@ function TrackerPage() {
         <div className="w-10" />
       </div>
 
-      {/* Today's status */}
-      {todayAnswer !== null && (
-        <div className="mt-4 px-4 py-2 rounded-full bg-brand-100 text-brand-700 text-body-bold font-body-bold">
-          ✓ Marked Yes today
-        </div>
-      )}
+      {/* Today's Yes/No toggle buttons */}
+      <div className="mt-4 flex gap-2">
+        <button
+          onClick={() => handleAnswer(true)}
+          className={`px-6 py-2 rounded-full text-body-bold font-body-bold transition-colors ${
+            todayAnswer === true
+              ? "bg-brand-600 text-white shadow-md"
+              : "bg-brand-100 text-brand-600 hover:bg-brand-200"
+          }`}
+        >
+          Yes
+        </button>
+        <button
+          onClick={() => handleAnswer(false)}
+          className={`px-6 py-2 rounded-full text-body-bold font-body-bold transition-colors ${
+            todayAnswer === false
+              ? "bg-brand-600 text-white shadow-md"
+              : "bg-brand-100 text-brand-600 hover:bg-brand-200"
+          }`}
+        >
+          No
+        </button>
+      </div>
 
       {/* Month navigation */}
       <div className="flex items-center gap-4 mt-6">
