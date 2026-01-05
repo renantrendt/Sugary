@@ -190,6 +190,11 @@ function HomePage() {
 
     // Load today's sugar
     const today = getTodayDate();
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadUserData:today',message:'Today date calculated',data:{today,jsDate:new Date().toString(),userId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    
     const { data: todayLog } = await supabase
       .from("sugar_logs")
       .select("sugar_grams")
@@ -197,8 +202,14 @@ function HomePage() {
       .eq("date", today)
       .single();
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadUserData:todayLog',message:'Today sugar log fetched',data:{today,todayLog,sugarGrams:todayLog?.sugar_grams},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+
     if (todayLog) {
       setTodaySugar(todayLog.sugar_grams);
+    } else {
+      setTodaySugar(0);
     }
 
     // Load ranking
@@ -535,6 +546,10 @@ function HomePage() {
   };
 
   const loadRanking = async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:entry',message:'loadRanking called',data:{currentGroupId:currentGroup?.id,currentGroupName:currentGroup?.name},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     // Get members of current group (or all users if no group)
     let memberUserIds: string[] = [];
     
@@ -545,6 +560,10 @@ function HomePage() {
         .eq("group_id", currentGroup.id);
       
       memberUserIds = members?.map(m => m.user_id) || [];
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:members',message:'Group members fetched',data:{groupId:currentGroup.id,memberCount:memberUserIds.length,memberIds:memberUserIds},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
       
       if (memberUserIds.length === 0) {
         setRanking([]);
@@ -564,6 +583,10 @@ function HomePage() {
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     const weekEnd = formatDateLocal(endOfWeek);
     
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:dates',message:'Week dates calculated',data:{weekStart,weekEnd,nowLocal:formatDateLocal(now)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    
     // Build query for sugar logs
     let query = supabase
       .from("sugar_logs")
@@ -577,53 +600,89 @@ function HomePage() {
     }
     
     const { data: logs } = await query;
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:logs',message:'Sugar logs fetched',data:{logCount:logs?.length||0,logs:logs?.slice(0,5)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
-    if (logs) {
-      // Group by user and sum their weekly sugar
-      const userTotals = new Map<string, { 
-        user_id: string; 
-        sugar: number; 
-        name_tag: string; 
-        longest_streak: number;
-      }>();
+    // First, get ALL group members with their info so everyone appears (even with 0g)
+    let allMembers: { user_id: string; name_tag: string; longest_streak: number }[] = [];
+    
+    if (currentGroup && memberUserIds.length > 0) {
+      const { data: memberUsers } = await supabase
+        .from("users")
+        .select("id, name_tag, longest_streak")
+        .in("id", memberUserIds);
       
+      allMembers = (memberUsers || []).map(u => ({
+        user_id: u.id,
+        name_tag: u.name_tag,
+        longest_streak: u.longest_streak || 0,
+      }));
+    }
+
+    // Group by user and sum their weekly sugar
+    const userTotals = new Map<string, { 
+      user_id: string; 
+      sugar: number; 
+      name_tag: string; 
+      longest_streak: number;
+    }>();
+    
+    // Initialize all members with 0g
+    for (const member of allMembers) {
+      userTotals.set(member.user_id, {
+        user_id: member.user_id,
+        sugar: 0,
+        name_tag: member.name_tag,
+        longest_streak: member.longest_streak,
+      });
+    }
+    
+    // Add sugar from logs
+    if (logs) {
       for (const log of logs as any[]) {
         const existing = userTotals.get(log.user_id);
         if (existing) {
-          existing.sugar += log.sugar_grams;
+          existing.sugar += log.sugar_grams || 0;
         } else {
+          // User has logs but wasn't in group members (shouldn't happen with proper filter)
           userTotals.set(log.user_id, {
             user_id: log.user_id,
-            sugar: log.sugar_grams,
+            sugar: log.sugar_grams || 0,
             name_tag: log.users?.name_tag || "Unknown",
             longest_streak: log.users?.longest_streak || 0,
           });
         }
       }
-
-      // Calculate streak for each user and build ranking
-      const rankingData = await Promise.all(
-        Array.from(userTotals.values()).map(async (userData) => {
-          const streak = await calculateStreak(userData.user_id);
-          const longest_streak = await updateLongestStreak(
-            userData.user_id, 
-            streak, 
-            userData.longest_streak
-          );
-          return {
-            user_id: userData.user_id,
-            name_tag: userData.name_tag,
-            sugar: userData.sugar,
-            streak,
-            longest_streak,
-          };
-        })
-      );
-      
-      // Sort by sugar (ascending - less sugar = better)
-      rankingData.sort((a, b) => a.sugar - b.sugar);
-      setRanking(rankingData);
     }
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:totals',message:'User totals calculated',data:{totalMembers:userTotals.size,members:Array.from(userTotals.values()).map(u=>({name:u.name_tag,sugar:u.sugar}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A',runId:'post-fix'})}).catch(()=>{});
+    // #endregion
+
+    // Calculate streak for each user and build ranking
+    const rankingData = await Promise.all(
+      Array.from(userTotals.values()).map(async (userData) => {
+        const streak = await calculateStreak(userData.user_id);
+        const longest_streak = await updateLongestStreak(
+          userData.user_id, 
+          streak, 
+          userData.longest_streak
+        );
+        return {
+          user_id: userData.user_id,
+          name_tag: userData.name_tag,
+          sugar: userData.sugar,
+          streak,
+          longest_streak,
+        };
+      })
+    );
+    
+    // Sort by sugar (ascending - less sugar = better)
+    rankingData.sort((a, b) => a.sugar - b.sugar);
+    setRanking(rankingData);
   };
 
   // Get total sugar for a specific month
