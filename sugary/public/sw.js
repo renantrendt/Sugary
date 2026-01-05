@@ -2,7 +2,7 @@
 const CACHE_NAME = 'sugary-v1';
 
 // AUTO-DETECTION SCHEDULE (Uses UTC - works globally):
-// Sat 1:00 AM UTC     → weekly ranking (Fri 5pm PT, before Sunday reset)
+// Sun 1:00 AM UTC     → weekly ranking (Sat 5pm PT, before Monday reset)
 // 1:00-1:15 AM UTC    → daily reminders (5pm PT previous day, Mon-Sat)
 // ALL OTHER TIMES     → update notifications (anytime outside daily/weekly windows)
 // NOTE: All users worldwide get correct message TYPE, but at different local times
@@ -62,8 +62,8 @@ function getRandomNotification(type = 'random') {
     const hour = now.getUTCHours();
     const minute = now.getUTCMinutes();
     
-    // Saturday 1:00 AM UTC = weekly ranking (Friday 5pm PT, before Sunday reset)
-    if (day === 6 && hour === 1) {
+    // Sunday 1:00 AM UTC = weekly ranking (Saturday 5pm PT, before Monday reset)
+    if (day === 0 && hour === 1) {
       type = 'weekly';
     }
     // 1:00-1:15 AM UTC Tue-Sat = daily reminder (5pm PT previous day)

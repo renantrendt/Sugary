@@ -454,7 +454,8 @@ function HomePage() {
     setTrackers([]);
   };
 
-  // Calculate streak for a user (consecutive days under 5g with 2-day grace period)
+  // Calculate streak for a user (consecutive days under 5g with grace period)
+  // If today has 5g+, streak is immediately 0
   const calculateStreak = async (userId: string): Promise<number> => {
     // Get last 60 days of logs for this user
     const sixtyDaysAgo = new Date();
@@ -473,12 +474,19 @@ function HomePage() {
       logMap.set(log.date, log.sugar_grams);
     });
 
+    // Check today first - if 5g or more, streak is immediately broken
+    const today = formatDateLocal(new Date());
+    const todaySugar = logMap.get(today);
+    if (todaySugar !== undefined && todaySugar >= 5) {
+      return 0; // Streak broken by today's sugar
+    }
+
     let streak = 0;
     let consecutiveGraceDays = 0;
     const maxGraceDays = 7;
     let hasFoundFirstRealDay = false;
     
-    // Start from yesterday and go backwards (today doesn't count for streak)
+    // Start from yesterday and go backwards
     const checkDate = new Date();
     checkDate.setDate(checkDate.getDate() - 1);
     
@@ -538,12 +546,14 @@ function HomePage() {
 
   const getTimeUntilReset = () => {
     const now = new Date();
-    const daysUntilSunday = (7 - now.getDay()) % 7 || 7; // If Sunday, show 7 days
-    const nextSunday = new Date(now);
-    nextSunday.setDate(now.getDate() + daysUntilSunday);
-    nextSunday.setHours(0, 0, 0, 0);
+    // Days until next Monday (1 = Monday)
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek); // Sunday -> 1 day, Mon -> 7, Tue -> 6, etc.
+    const nextMonday = new Date(now);
+    nextMonday.setDate(now.getDate() + daysUntilMonday);
+    nextMonday.setHours(0, 0, 0, 0);
     
-    const diff = nextSunday.getTime() - now.getTime();
+    const diff = nextMonday.getTime() - now.getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     
@@ -568,14 +578,15 @@ function HomePage() {
       }
     }
     
-    // Get start of current week (Sunday)
+    // Get start of current week (Monday)
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 = Sunday
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 6 days from Monday
     const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - dayOfWeek);
+    startOfWeek.setDate(now.getDate() - daysFromMonday);
     const weekStart = formatDateLocal(startOfWeek);
     
-    // Get end of current week (Saturday) to include all days
+    // Get end of current week (Sunday) to include all days
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     const weekEnd = formatDateLocal(endOfWeek);
@@ -586,7 +597,7 @@ function HomePage() {
       .select("user_id, sugar_grams, date, users(name_tag, longest_streak)")
       .gte("date", weekStart)
       .lte("date", weekEnd);
-    
+
     // Filter by group members if we have a group selected
     if (currentGroup && memberUserIds.length > 0) {
       query = query.in("user_id", memberUserIds);
@@ -610,14 +621,14 @@ function HomePage() {
       }));
     }
 
-    // Group by user and sum their weekly sugar
-    const userTotals = new Map<string, { 
-      user_id: string; 
-      sugar: number; 
-      name_tag: string; 
-      longest_streak: number;
-    }>();
-    
+      // Group by user and sum their weekly sugar
+      const userTotals = new Map<string, { 
+        user_id: string; 
+        sugar: number; 
+        name_tag: string; 
+        longest_streak: number;
+      }>();
+      
     // Initialize all members with 0g
     for (const member of allMembers) {
       userTotals.set(member.user_id, {
@@ -643,31 +654,31 @@ function HomePage() {
             longest_streak: log.users?.longest_streak || 0,
           });
         }
+        }
       }
-    }
-    
-    // Calculate streak for each user and build ranking
-    const rankingData = await Promise.all(
-      Array.from(userTotals.values()).map(async (userData) => {
-        const streak = await calculateStreak(userData.user_id);
-        const longest_streak = await updateLongestStreak(
-          userData.user_id, 
-          streak, 
-          userData.longest_streak
-        );
-        return {
-          user_id: userData.user_id,
-          name_tag: userData.name_tag,
-          sugar: userData.sugar,
-          streak,
-          longest_streak,
-        };
-      })
-    );
-    
-    // Sort by sugar (ascending - less sugar = better)
-    rankingData.sort((a, b) => a.sugar - b.sugar);
-    setRanking(rankingData);
+
+      // Calculate streak for each user and build ranking
+      const rankingData = await Promise.all(
+        Array.from(userTotals.values()).map(async (userData) => {
+          const streak = await calculateStreak(userData.user_id);
+          const longest_streak = await updateLongestStreak(
+            userData.user_id, 
+            streak, 
+            userData.longest_streak
+          );
+          return {
+            user_id: userData.user_id,
+            name_tag: userData.name_tag,
+            sugar: userData.sugar,
+            streak,
+            longest_streak,
+          };
+        })
+      );
+      
+      // Sort by sugar (ascending - less sugar = better)
+      rankingData.sort((a, b) => a.sugar - b.sugar);
+      setRanking(rankingData);
   };
 
   // Get total sugar for a specific month
