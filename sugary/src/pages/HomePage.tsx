@@ -190,21 +190,12 @@ function HomePage() {
 
     // Load today's sugar
     const today = getTodayDate();
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadUserData:today',message:'Today date calculated',data:{today,jsDate:new Date().toString(),userId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
-    
     const { data: todayLog } = await supabase
       .from("sugar_logs")
       .select("sugar_grams")
       .eq("user_id", userId)
       .eq("date", today)
       .single();
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadUserData:todayLog',message:'Today sugar log fetched',data:{today,todayLog,sugarGrams:todayLog?.sugar_grams},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
 
     if (todayLog) {
       setTodaySugar(todayLog.sugar_grams);
@@ -545,11 +536,21 @@ function HomePage() {
     return currentLongest;
   };
 
-  const loadRanking = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:entry',message:'loadRanking called',data:{currentGroupId:currentGroup?.id,currentGroupName:currentGroup?.name},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
+  const getTimeUntilReset = () => {
+    const now = new Date();
+    const daysUntilSunday = (7 - now.getDay()) % 7 || 7; // If Sunday, show 7 days
+    const nextSunday = new Date(now);
+    nextSunday.setDate(now.getDate() + daysUntilSunday);
+    nextSunday.setHours(0, 0, 0, 0);
     
+    const diff = nextSunday.getTime() - now.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    return `${days}d ${hours}h`;
+  };
+
+  const loadRanking = async () => {
     // Get members of current group (or all users if no group)
     let memberUserIds: string[] = [];
     
@@ -560,10 +561,6 @@ function HomePage() {
         .eq("group_id", currentGroup.id);
       
       memberUserIds = members?.map(m => m.user_id) || [];
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:members',message:'Group members fetched',data:{groupId:currentGroup.id,memberCount:memberUserIds.length,memberIds:memberUserIds},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       
       if (memberUserIds.length === 0) {
         setRanking([]);
@@ -583,10 +580,6 @@ function HomePage() {
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     const weekEnd = formatDateLocal(endOfWeek);
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:dates',message:'Week dates calculated',data:{weekStart,weekEnd,nowLocal:formatDateLocal(now)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-    
     // Build query for sugar logs
     let query = supabase
       .from("sugar_logs")
@@ -601,10 +594,6 @@ function HomePage() {
     
     const { data: logs } = await query;
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:logs',message:'Sugar logs fetched',data:{logCount:logs?.length||0,logs:logs?.slice(0,5)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-
     // First, get ALL group members with their info so everyone appears (even with 0g)
     let allMembers: { user_id: string; name_tag: string; longest_streak: number }[] = [];
     
@@ -657,10 +646,6 @@ function HomePage() {
       }
     }
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/59838800-7c89-43f4-bcc9-f6e998d97917',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HomePage.tsx:loadRanking:totals',message:'User totals calculated',data:{totalMembers:userTotals.size,members:Array.from(userTotals.values()).map(u=>({name:u.name_tag,sugar:u.sugar}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A',runId:'post-fix'})}).catch(()=>{});
-    // #endregion
-
     // Calculate streak for each user and build ranking
     const rankingData = await Promise.all(
       Array.from(userTotals.values()).map(async (userData) => {
@@ -1326,6 +1311,11 @@ function HomePage() {
             </>
           )}
         </div>
+        
+        {/* Countdown to reset */}
+        <span className="text-caption font-caption text-subtext-color">
+          Resets in {getTimeUntilReset()}
+        </span>
       </div>
 
       {/* Main sugar button area */}
