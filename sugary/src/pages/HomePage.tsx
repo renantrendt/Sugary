@@ -394,6 +394,9 @@ function HomePage() {
     setNewTrackerType("yes_no");
     setNewTrackerUnit("");
     setShowCreateTracker(false);
+    
+    // Redirect to the new tracker
+    navigate(`/tracker/${newTracker.id}`);
   };
 
   const selectGroup = async (group: Group) => {
@@ -997,12 +1000,14 @@ function HomePage() {
                           {tracker.type === 'yes_no' ? 'Y/N' : tracker.unit || '#'}
                         </span>
                       </button>
-                      <button
-                        onClick={() => deleteTracker(tracker.id, tracker.name)}
-                        className="p-2 text-neutral-400 hover:text-error-500 hover:bg-error-50 rounded-lg transition-colors"
-                      >
-                        <FaTrash size={12} />
-                      </button>
+                      {tracker.created_by === localStorage.getItem("userId") && (
+                        <button
+                          onClick={() => deleteTracker(tracker.id, tracker.name)}
+                          className="p-2 text-neutral-400 hover:text-error-500 hover:bg-error-50 rounded-lg transition-colors"
+                        >
+                          <FaTrash size={12} />
+                        </button>
+                      )}
                     </div>
                   ))}
                   
