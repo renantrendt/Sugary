@@ -485,9 +485,6 @@ function HomePage() {
     }
 
     let streak = 0;
-    let consecutiveGraceDays = 0;
-    const maxGraceDays = 7;
-    let hasFoundFirstRealDay = false;
     
     // Start from yesterday and go backwards
     const checkDate = new Date();
@@ -497,36 +494,15 @@ function HomePage() {
       const dateStr = formatDateLocal(checkDate);
       const sugar = logMap.get(dateStr);
       
-      if (sugar !== undefined) {
-        // Has a log for this day
-        if (sugar < 5) {
-          // Valid streak day!
-          hasFoundFirstRealDay = true;
-          streak++;
-          consecutiveGraceDays = 0; // Reset grace counter
-        } else {
-          // Ate 5g or more, streak breaks
-          break;
-        }
+      // No log = 0 sugar (you didn't eat any sugar = valid streak day!)
+      // Logged < 5g = valid streak day
+      // Logged >= 5g = streak broken
+      if (sugar === undefined || sugar < 5) {
+        // Valid streak day!
+        streak++;
       } else {
-        // No log for this day
-        if (!hasFoundFirstRealDay) {
-          // Haven't started a real streak yet, keep looking
-          consecutiveGraceDays++;
-          if (consecutiveGraceDays > maxGraceDays) {
-            // Too many days without finding a real day, no streak
-            break;
-          }
-          // Don't count this toward streak, just skip
-        } else {
-          // Already have a streak going, use grace period
-          consecutiveGraceDays++;
-          if (consecutiveGraceDays > maxGraceDays) {
-            // Too many missed days, streak breaks
-            break;
-          }
-          // Grace day bridges the gap but doesn't add to streak count
-        }
+        // Ate 5g or more, streak breaks
+        break;
       }
       
       checkDate.setDate(checkDate.getDate() - 1);

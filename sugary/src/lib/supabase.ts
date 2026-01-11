@@ -67,4 +67,3 @@ export function generateInviteCode(): string {
   }
   return code
 }
-
