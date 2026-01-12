@@ -498,11 +498,11 @@ function HomePage() {
       // Logged < 5g = valid streak day
       // Logged >= 5g = streak broken
       if (sugar === undefined || sugar < 5) {
-        // Valid streak day!
-        streak++;
-      } else {
-        // Ate 5g or more, streak breaks
-        break;
+          // Valid streak day!
+          streak++;
+        } else {
+          // Ate 5g or more, streak breaks
+          break;
       }
       
       checkDate.setDate(checkDate.getDate() - 1);

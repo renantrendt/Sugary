@@ -28,9 +28,7 @@ export interface Group {
   created_by: string
   created_at: string
   invite_code: string
-}
-
-export interface GroupMember {
+}export interface GroupMember {
   id: string
   group_id: string
   user_id: string
