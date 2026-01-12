@@ -16,16 +16,6 @@ function HomePage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [todaySugar, setTodaySugar] = useState(0);
   const [ranking, setRanking] = useState<{ user_id: string; name_tag: string; sugar: number; streak: number; longest_streak: number }[]>([]);
-  const [selectedUser, setSelectedUser] = useState<{
-    user_id: string;
-    name_tag: string;
-    longest_streak: number;
-    monthSugar: number;
-    yearSugar: number;
-    viewMonth: number; // 0-11
-    viewYear: number;
-    viewMode: "month" | "year";
-  } | null>(null);
   const [isHolding, setIsHolding] = useState(false);
   const [holdingSugar, setHoldingSugar] = useState(0);
   const [isWarming, setIsWarming] = useState(false); // 2 sec warmup phase
@@ -457,52 +447,38 @@ function HomePage() {
     setTrackers([]);
   };
 
-  // Calculate streak for a user (consecutive days under 5g with grace period)
-  // If today has 5g+, streak is immediately 0
-  const calculateStreak = async (userId: string): Promise<number> => {
-    // Get last 60 days of logs for this user
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-    
-    const { data: logs } = await supabase
-      .from("sugar_logs")
-      .select("date, sugar_grams")
-      .eq("user_id", userId)
-      .gte("date", formatDateLocal(sixtyDaysAgo))
-      .order("date", { ascending: false });
-
-    // Create a map of date -> sugar_grams
-    const logMap = new Map<string, number>();
-    logs?.forEach((log) => {
-      logMap.set(log.date, log.sugar_grams);
-    });
-
-    // Check today first - if 5g or more, streak is immediately broken
+  // Calculate CURRENT streak (consecutive days including today going backwards with ≤5g)
+  // If today has >5g logged, streak is immediately 0
+  // This is displayed on the home page ranking
+  const calculateCurrentStreak = async (userId: string, logMap: Map<string, number>): Promise<number> => {
+    const APP_START_DATE = "2026-01-01";
     const today = formatDateLocal(new Date());
-    const todaySugar = logMap.get(today);
-    if (todaySugar !== undefined && todaySugar >= 5) {
-      return 0; // Streak broken by today's sugar
-    }
-
-    let streak = 0;
     
-    // Start from yesterday and go backwards
+    // Check today first - if MORE than 5g logged, current streak is 0
+    const todaySugar = logMap.get(today);
+    if (todaySugar !== undefined && todaySugar > 5) {
+      return 0;
+    }
+    
+    // Start from TODAY (count today if it's good) and go backwards
+    let streak = 0;
     const checkDate = new Date();
-    checkDate.setDate(checkDate.getDate() - 1);
     
     for (let i = 0; i < 60; i++) {
       const dateStr = formatDateLocal(checkDate);
+      
+      // Stop if we've gone before the app start date
+      if (dateStr < APP_START_DATE) {
+        break;
+      }
+      
       const sugar = logMap.get(dateStr);
       
-      // No log = 0 sugar (you didn't eat any sugar = valid streak day!)
-      // Logged < 5g = valid streak day
-      // Logged >= 5g = streak broken
-      if (sugar === undefined || sugar < 5) {
-        // Valid streak day!
+      // A day is "good" if no log (0g) or sugar <= 5g
+      if (sugar === undefined || sugar <= 5) {
         streak++;
       } else {
-        // Ate 5g or more, streak breaks
-        break;
+        break; // Streak broken
       }
       
       checkDate.setDate(checkDate.getDate() - 1);
@@ -511,16 +487,72 @@ function HomePage() {
     return streak;
   };
 
-  // Update longest streak in DB if current streak beats the record
-  const updateLongestStreak = async (userId: string, currentStreak: number, currentLongest: number) => {
-    if (currentStreak > currentLongest) {
+  // Calculate LONGEST streak ever (best consecutive days with ≤5g since app start)
+  // This is stored in DB and displayed on user stats page
+  const calculateLongestStreak = (logMap: Map<string, number>): number => {
+    let longestStreak = 0;
+    let currentStreak = 0;
+    
+    // Start from Jan 1, 2026 in LOCAL time (not UTC)
+    const checkDate = new Date(2026, 0, 1); // Month is 0-indexed, so 0 = January
+    const todayDate = new Date();
+    
+    while (checkDate <= todayDate) {
+      const dateStr = formatDateLocal(checkDate);
+      const sugar = logMap.get(dateStr);
+      
+      // A day is "good" if no log (0g) or sugar <= 5g
+      const isGood = sugar === undefined || sugar <= 5;
+      
+      if (isGood) {
+        currentStreak++;
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+      } else {
+        currentStreak = 0;
+      }
+      
+      checkDate.setDate(checkDate.getDate() + 1);
+    }
+    
+    return longestStreak;
+  };
+
+  // Main function to calculate both current and longest streaks
+  const calculateStreaks = async (userId: string): Promise<{current: number, longest: number}> => {
+    const APP_START_DATE = "2026-01-01";
+    
+    // Get all logs since app start for this user
+    const { data: logs } = await supabase
+      .from("sugar_logs")
+      .select("date, sugar_grams")
+      .eq("user_id", userId)
+      .gte("date", APP_START_DATE)
+      .order("date", { ascending: true });
+
+    // Create a map of date -> sugar_grams
+    const logMap = new Map<string, number>();
+    logs?.forEach((log) => {
+      logMap.set(log.date, log.sugar_grams);
+    });
+
+    const current = await calculateCurrentStreak(userId, logMap);
+    const longest = calculateLongestStreak(logMap);
+    
+    return { current, longest };
+  };
+
+  // Update longest streak in DB if calculated value differs from stored
+  const updateLongestStreak = async (userId: string, calculatedLongest: number, storedLongest: number) => {
+    if (calculatedLongest !== storedLongest) {
       await supabase
         .from("users")
-        .update({ longest_streak: currentStreak })
+        .update({ longest_streak: calculatedLongest })
         .eq("id", userId);
-      return currentStreak;
+      return calculatedLongest;
     }
-    return currentLongest;
+    return storedLongest;
   };
 
   const getTimeUntilReset = () => {
@@ -639,18 +671,19 @@ function HomePage() {
       // Calculate streak for each user and build ranking
       const rankingData = await Promise.all(
         Array.from(userTotals.values()).map(async (userData) => {
-          const streak = await calculateStreak(userData.user_id);
-          const longest_streak = await updateLongestStreak(
+          const { current, longest } = await calculateStreaks(userData.user_id);
+          // Update longest_streak in DB if it changed
+          const updated_longest = await updateLongestStreak(
             userData.user_id, 
-            streak, 
+            longest, 
             userData.longest_streak
           );
           return {
             user_id: userData.user_id,
             name_tag: userData.name_tag,
             sugar: userData.sugar,
-            streak,
-            longest_streak,
+            streak: current,  // Display CURRENT streak on home page
+            longest_streak: updated_longest,  // Store LONGEST in DB
           };
         })
       );
@@ -658,91 +691,6 @@ function HomePage() {
       // Sort by sugar (ascending - less sugar = better)
       rankingData.sort((a, b) => a.sugar - b.sugar);
       setRanking(rankingData);
-  };
-
-  // Get total sugar for a specific month
-  const getMonthSugar = async (userId: string, year: number, month: number): Promise<number> => {
-    const startOfMonth = formatDateLocal(new Date(year, month, 1));
-    const endOfMonth = formatDateLocal(new Date(year, month + 1, 0));
-
-    const { data: logs } = await supabase
-      .from("sugar_logs")
-      .select("sugar_grams")
-      .eq("user_id", userId)
-      .gte("date", startOfMonth)
-      .lte("date", endOfMonth);
-
-    return logs?.reduce((sum, log) => sum + log.sugar_grams, 0) || 0;
-  };
-
-  // Get total sugar for a specific year
-  const getYearSugar = async (userId: string, year: number): Promise<number> => {
-    const startOfYear = `${year}-01-01`;
-    const endOfYear = `${year}-12-31`;
-
-    const { data: logs } = await supabase
-      .from("sugar_logs")
-      .select("sugar_grams")
-      .eq("user_id", userId)
-      .gte("date", startOfYear)
-      .lte("date", endOfYear);
-
-    return logs?.reduce((sum, log) => sum + log.sugar_grams, 0) || 0;
-  };
-
-  // Open user stats popup
-  const openUserStats = async (user: { user_id: string; name_tag: string; longest_streak: number }) => {
-    const now = new Date();
-    const monthSugar = await getMonthSugar(user.user_id, now.getFullYear(), now.getMonth());
-    const yearSugar = await getYearSugar(user.user_id, now.getFullYear());
-    
-    setSelectedUser({
-      user_id: user.user_id,
-      name_tag: user.name_tag,
-      longest_streak: user.longest_streak,
-      monthSugar,
-      yearSugar,
-      viewMonth: now.getMonth(),
-      viewYear: now.getFullYear(),
-      viewMode: "month",
-    });
-  };
-
-  // Navigate months/years in the popup
-  const navigateStats = async (direction: "prev" | "next", type: "month" | "year") => {
-    if (!selectedUser) return;
-
-    let newMonth = selectedUser.viewMonth;
-    let newYear = selectedUser.viewYear;
-
-    if (type === "month") {
-      if (direction === "prev") {
-        newMonth--;
-        if (newMonth < 0) {
-          newMonth = 11;
-          newYear--;
-        }
-      } else {
-        newMonth++;
-        if (newMonth > 11) {
-          newMonth = 0;
-          newYear++;
-        }
-      }
-    } else {
-      newYear = direction === "prev" ? newYear - 1 : newYear + 1;
-    }
-
-    const monthSugar = await getMonthSugar(selectedUser.user_id, newYear, newMonth);
-    const yearSugar = await getYearSugar(selectedUser.user_id, newYear);
-
-    setSelectedUser({
-      ...selectedUser,
-      monthSugar,
-      yearSugar,
-      viewMonth: newMonth,
-      viewYear: newYear,
-    });
   };
 
   const saveSugar = async (grams: number) => {
@@ -1195,79 +1143,6 @@ function HomePage() {
           </span>
         </div>
 
-        {/* User stats popup */}
-        {selectedUser && (
-          <>
-            {/* Backdrop to close on click outside */}
-            <div 
-              className="fixed inset-0 z-40" 
-              onClick={() => setSelectedUser(null)}
-            />
-            <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-white rounded-xl shadow-lg p-4 z-50 min-w-[180px]">
-              {/* User name */}
-              <div className="text-heading-3 font-heading-3 text-default-font text-center mb-3">
-                {selectedUser.name_tag}
-              </div>
-              
-              {/* Longest streak */}
-              <div className="flex items-center justify-center gap-2 mb-3 pb-3 border-b border-neutral-100">
-                <FaFire className="text-brand-600" />
-                <span className="text-body-bold font-body-bold text-brand-600">{selectedUser.longest_streak}</span>
-              </div>
-              
-              {/* Tabs */}
-              <div className="flex rounded-lg bg-brand-50 p-1 mb-3">
-                <button
-                  onClick={() => setSelectedUser({ ...selectedUser, viewMode: "month" })}
-                  className={`flex-1 py-1 px-2 rounded-md text-caption font-caption transition-colors ${
-                    selectedUser.viewMode === "month"
-                      ? "bg-white text-brand-600 shadow-sm"
-                      : "text-subtext-color"
-                  }`}
-                >
-                  Month
-                </button>
-                <button
-                  onClick={() => setSelectedUser({ ...selectedUser, viewMode: "year" })}
-                  className={`flex-1 py-1 px-2 rounded-md text-caption font-caption transition-colors ${
-                    selectedUser.viewMode === "year"
-                      ? "bg-white text-brand-600 shadow-sm"
-                      : "text-subtext-color"
-                  }`}
-                >
-                  Year
-                </button>
-              </div>
-              
-              {/* Single view with arrows */}
-              <div className="flex items-center justify-between gap-2">
-                <button 
-                  onClick={() => navigateStats("prev", selectedUser.viewMode)}
-                  className="text-brand-600 hover:text-brand-700 text-xl px-1"
-                >
-                  ‹
-                </button>
-                <div className="flex flex-col items-center">
-                  <span className="text-caption font-caption text-subtext-color">
-                    {selectedUser.viewMode === "month"
-                      ? new Date(selectedUser.viewYear, selectedUser.viewMonth).toLocaleDateString("en-US", { month: "short", year: "numeric" })
-                      : selectedUser.viewYear}
-                  </span>
-                  <span className="text-heading-2 font-heading-2 text-brand-600">
-                    {selectedUser.viewMode === "month" ? selectedUser.monthSugar : selectedUser.yearSugar}g
-                  </span>
-                </div>
-                <button 
-                  onClick={() => navigateStats("next", selectedUser.viewMode)}
-                  className="text-brand-600 hover:text-brand-700 text-xl px-1"
-                >
-                  ›
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
         {/* Ranking - horizontal scroll */}
         <div className="flex w-full items-center gap-6 overflow-x-auto px-4 pb-2 hide-scrollbar">
           {ranking.length === 0 ? (
@@ -1281,7 +1156,7 @@ function HomePage() {
               {ranking.map((user) => (
                 <button
                   key={user.name_tag}
-                  onClick={() => openUserStats({ user_id: user.user_id, name_tag: user.name_tag, longest_streak: user.longest_streak })}
+                  onClick={() => navigate(`/user/${user.user_id}`)}
                   className="flex flex-col items-center gap-1 flex-shrink-0 hover:opacity-80 transition-opacity"
                 >
                   <span className="text-heading-2 font-heading-2 text-brand-600">
