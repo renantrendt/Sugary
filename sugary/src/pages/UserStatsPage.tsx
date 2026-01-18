@@ -143,6 +143,16 @@ function UserStatsPage() {
     return date > today;
   };
 
+  // Check if date is before user joined
+  const isBeforeUserJoined = (date: Date): boolean => {
+    if (!user?.created_at) return false;
+    const joinDate = new Date(user.created_at);
+    joinDate.setHours(0, 0, 0, 0);
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+    return checkDate < joinDate;
+  };
+
   if (!user) {
     return (
       <div className="flex w-full h-screen items-center justify-center bg-brand-50">
@@ -241,10 +251,11 @@ function UserStatsPage() {
             const sugar = getSugarForDate(dayInfo.date);
             const isToday = isCurrentMonth && dayInfo.day === today.getDate();
             const isFuture = isFutureDate(dayInfo.date);
+            const isPreJoin = isBeforeUserJoined(dayInfo.date);
             
             // Fire icon for days with ≤5g or no log (0g)
-            // No log on a past date = 0g = streak day
-            const isStreakDay = !isFuture && (sugar === null || sugar <= 5);
+            // Only show for days on or after user joined
+            const isStreakDay = !isFuture && !isPreJoin && (sugar === null || sugar <= 5);
             const displaySugar = sugar === null ? 0 : sugar;
 
             return (
@@ -254,7 +265,7 @@ function UserStatsPage() {
                   isToday
                     ? "bg-brand-200 ring-2 ring-brand-400"
                     : "bg-white"
-                } ${isFuture ? "opacity-40" : ""}`}
+                } ${isFuture || isPreJoin ? "opacity-40" : ""}`}
               >
                 <span
                   className={`text-caption font-caption ${
@@ -263,7 +274,7 @@ function UserStatsPage() {
                 >
                   {dayInfo.day}
                 </span>
-                {!isFuture && (
+                {!isFuture && !isPreJoin && (
                   <div className="flex flex-col items-center">
                     {isStreakDay && (
                       <FaFire className="text-brand-500 text-xs" />

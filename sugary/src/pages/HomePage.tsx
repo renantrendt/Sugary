@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase, User, SugarLog, Group, GroupMember, Tracker, generateInviteCode } from "../lib/supabase";
-import { FaFire, FaBars, FaPlus, FaXmark, FaUserPlus, FaUsers, FaHouse, FaCheck, FaTrash } from "react-icons/fa6";
+import { FaFire, FaBars, FaPlus, FaXmark, FaUserPlus, FaUsers, FaHouse, FaCheck, FaTrash, FaCircleInfo } from "react-icons/fa6";
 import { 
   isPushSupported, 
   subscribeToPush, 
@@ -39,6 +39,9 @@ function HomePage() {
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [showMembers, setShowMembers] = useState(false);
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [showAddSugarModal, setShowAddSugarModal] = useState(false);
+  const [manualSugarInput, setManualSugarInput] = useState("");
+  const [showInfoModal, setShowInfoModal] = useState(false);
   
   const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const holdIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -450,8 +453,8 @@ function HomePage() {
   // Calculate CURRENT streak (consecutive days including today going backwards with ≤5g)
   // If today has >5g logged, streak is immediately 0
   // This is displayed on the home page ranking
-  const calculateCurrentStreak = async (userId: string, logMap: Map<string, number>): Promise<number> => {
-    const APP_START_DATE = "2026-01-01";
+  const calculateCurrentStreak = async (userId: string, logMap: Map<string, number>, userCreatedAt: string): Promise<number> => {
+    const userJoinDate = userCreatedAt.split("T")[0]; // Get date part only (YYYY-MM-DD)
     const today = formatDateLocal(new Date());
     
     // Check today first - if MORE than 5g logged, current streak is 0
@@ -467,8 +470,8 @@ function HomePage() {
     for (let i = 0; i < 60; i++) {
       const dateStr = formatDateLocal(checkDate);
       
-      // Stop if we've gone before the app start date
-      if (dateStr < APP_START_DATE) {
+      // Stop if we've gone before the user's join date
+      if (dateStr < userJoinDate) {
         break;
       }
       
@@ -487,14 +490,14 @@ function HomePage() {
     return streak;
   };
 
-  // Calculate LONGEST streak ever (best consecutive days with ≤5g since app start)
+  // Calculate LONGEST streak ever (best consecutive days with ≤5g since user joined)
   // This is stored in DB and displayed on user stats page
-  const calculateLongestStreak = (logMap: Map<string, number>): number => {
+  const calculateLongestStreak = (logMap: Map<string, number>, userCreatedAt: string): number => {
     let longestStreak = 0;
     let currentStreak = 0;
     
-    // Start from Jan 1, 2026 in LOCAL time (not UTC)
-    const checkDate = new Date(2026, 0, 1); // Month is 0-indexed, so 0 = January
+    // Start from user's join date in LOCAL time (not UTC)
+    const checkDate = new Date(userCreatedAt);
     const todayDate = new Date();
     
     while (checkDate <= todayDate) {
@@ -521,14 +524,21 @@ function HomePage() {
 
   // Main function to calculate both current and longest streaks
   const calculateStreaks = async (userId: string): Promise<{current: number, longest: number}> => {
-    const APP_START_DATE = "2026-01-01";
+    // Get user's created_at date to use as streak start
+    const { data: user } = await supabase
+      .from("users")
+      .select("created_at")
+      .eq("id", userId)
+      .single();
     
-    // Get all logs since app start for this user
+    const userCreatedAt = user?.created_at || "2026-01-01";
+    
+    // Get all logs since user joined
     const { data: logs } = await supabase
       .from("sugar_logs")
       .select("date, sugar_grams")
       .eq("user_id", userId)
-      .gte("date", APP_START_DATE)
+      .gte("date", userCreatedAt.split("T")[0]) // Use date part only
       .order("date", { ascending: true });
 
     // Create a map of date -> sugar_grams
@@ -537,8 +547,8 @@ function HomePage() {
       logMap.set(log.date, log.sugar_grams);
     });
 
-    const current = await calculateCurrentStreak(userId, logMap);
-    const longest = calculateLongestStreak(logMap);
+    const current = await calculateCurrentStreak(userId, logMap, userCreatedAt);
+    const longest = calculateLongestStreak(logMap, userCreatedAt);
     
     return { current, longest };
   };
@@ -689,7 +699,13 @@ function HomePage() {
       );
       
       // Sort by sugar (ascending - less sugar = better)
-      rankingData.sort((a, b) => a.sugar - b.sugar);
+      // Tiebreaker: higher streak = better (left)
+      rankingData.sort((a, b) => {
+        if (a.sugar !== b.sugar) {
+          return a.sugar - b.sugar;
+        }
+        return b.streak - a.streak;
+      });
       setRanking(rankingData);
   };
 
@@ -724,6 +740,32 @@ function HomePage() {
           requestNotifications();
         }, 500);
       }
+    }
+  };
+
+  // Set exact sugar total (for adjustment)
+  const setSugarTotal = async (total: number) => {
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+
+    const today = getTodayDate();
+
+    // Upsert today's log with exact value
+    const { error } = await supabase.from("sugar_logs").upsert(
+      {
+        user_id: userId,
+        date: today,
+        sugar_grams: total,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "user_id,date",
+      }
+    );
+
+    if (!error) {
+      setTodaySugar(total);
+      await loadRanking();
     }
   };
 
@@ -793,7 +835,7 @@ function HomePage() {
   });
 
   return (
-    <div className="flex w-full flex-col items-start bg-brand-50 h-screen relative">
+    <div className="flex w-full flex-col items-start bg-brand-50 min-h-screen h-screen overflow-hidden relative">
       {/* Hamburger menu button */}
       <button
         onClick={() => setDrawerOpen(true)}
@@ -1134,6 +1176,86 @@ function HomePage() {
         </>
       )}
 
+      {/* Adjust Sugar Modal */}
+      {showAddSugarModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setShowAddSugarModal(false); setManualSugarInput(""); }}>
+            <div className="bg-brand-50 rounded-xl p-6 w-full max-w-sm shadow-xl border border-brand-100" onClick={(e) => e.stopPropagation()}>
+              <h2 className="text-heading-3 font-heading-3 text-brand-600 mb-4">Adjust today's sugar</h2>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={manualSugarInput}
+                onChange={(e) => setManualSugarInput(e.target.value)}
+                placeholder="Amount in grams"
+                min="0"
+                className="w-full px-4 py-3 rounded-lg border border-brand-200 bg-white mb-4 text-body font-body text-center text-2xl focus:outline-none focus:ring-2 focus:ring-brand-400"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => { setShowAddSugarModal(false); setManualSugarInput(""); }} 
+                  className="flex-1 py-2 rounded-lg bg-brand-100 text-brand-600 hover:bg-brand-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    const amount = parseInt(manualSugarInput);
+                    if (!isNaN(amount) && amount >= 0) {
+                      setSugarTotal(amount);
+                    }
+                    setShowAddSugarModal(false);
+                    setManualSugarInput("");
+                  }} 
+                  className="flex-1 py-2 rounded-lg bg-brand-600 text-white"
+                >
+                  Adjust
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Info Modal */}
+      {showInfoModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowInfoModal(false)}>
+            <div className="bg-brand-50 rounded-xl p-6 w-full max-w-md shadow-xl border border-brand-100 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <h2 className="text-heading-3 font-heading-3 text-brand-600 mb-4">Guidelines on Added Sugar</h2>
+              
+              <p className="text-body font-body text-default-font mb-4">
+                Based on guidance from a range of national and international health organizations, a practical target is to keep added (or "free") sugars to about <strong>25 g/day</strong>, and generally no more than <strong>50 g/day</strong> (for a 2,000-calorie diet).
+              </p>
+              
+              <p className="text-body font-body text-default-font mb-4">
+                In Sugary, we use a more conservative goal: <strong>≤ 35 g per week</strong>.
+              </p>
+              
+              <h3 className="text-body-bold font-body-bold text-brand-600 mb-2">What are "free sugars"? (WHO definition)</h3>
+              
+              <p className="text-body font-body text-default-font mb-2">Free sugars include:</p>
+              <ul className="list-disc list-inside text-body font-body text-default-font mb-4 space-y-1">
+                <li>Sugars added to foods or drinks by the manufacturer, cook, or consumer, plus</li>
+                <li>Sugars naturally present in honey, syrups, fruit juices, and fruit juice concentrates.</li>
+              </ul>
+              
+              <p className="text-body font-body text-subtext-color italic">
+                Free sugars do not include sugars naturally found in whole fruits and vegetables, or lactose in milk.
+              </p>
+              
+              <button
+                onClick={() => setShowInfoModal(false)}
+                className="w-full mt-6 py-2 rounded-lg bg-brand-600 text-white"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Top bar with date and ranking */}
       <div className="mt-6 flex w-full flex-col items-center justify-center gap-4 px-6 pt-8 relative z-10">
         {/* Date display centered */}
@@ -1142,6 +1264,11 @@ function HomePage() {
             {todayFormatted}
           </span>
         </div>
+
+        {/* Week title */}
+        <span className="text-body font-body text-subtext-color">
+          this week's sugar
+        </span>
 
         {/* Ranking - horizontal scroll */}
         <div className="flex w-full items-center gap-6 overflow-x-auto px-4 pb-2 hide-scrollbar">
@@ -1186,12 +1313,15 @@ function HomePage() {
       </div>
 
       {/* Main sugar button area */}
-      <div className="mt-[-80px] flex w-full grow shrink-0 basis-0 flex-col items-center justify-center gap-6 px-6 py-12 relative">
-        {/* Total sugar display above the button */}
+      <div className="mt-[-20px] flex w-full grow shrink-0 basis-0 flex-col items-center justify-center gap-6 px-6 pt-12 pb-24 relative">
+        {/* Total sugar display above the button - tappable to type amount */}
         <div className="flex flex-col items-center gap-2">
-          <span className="text-heading-1 font-heading-1 text-brand-600">
+          <button
+            onClick={() => { setManualSugarInput(todaySugar.toString()); setShowAddSugarModal(true); }}
+            className="text-heading-1 font-heading-1 text-brand-600 hover:opacity-80 transition-opacity"
+          >
             {isHolding ? todaySugar + holdingSugar : todaySugar}g
-          </span>
+          </button>
           <span className="text-body font-body text-subtext-color">
             today's sugar
           </span>
@@ -1275,11 +1405,17 @@ function HomePage() {
 
         {/* Instructions */}
         <span className="text-caption font-caption text-subtext-color text-center italic">
-          Hold for 2 seconds to start adding sugar
+          Tap number to type or hold bowl for 2s
         </span>
-        <span className="text-caption font-caption text-subtext-color">
-            Streak: less than 5g/day
-          </span>
+        <span className="text-caption font-caption text-subtext-color flex items-center gap-1">
+          Streak: less than 5g/day
+          <button 
+            onClick={() => setShowInfoModal(true)} 
+            className="w-4 h-4 flex items-center justify-center rounded-full border border-neutral-400 bg-brand-50 text-neutral-400 text-[10px] font-bold hover:opacity-80 transition-opacity"
+          >
+            i
+          </button>
+        </span>
         
       </div>
     </div>
